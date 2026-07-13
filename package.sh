@@ -23,6 +23,9 @@ case "$VARIANT" in
            ROOTLINE='ui_print "   [+] root    : KernelSU + SusFS v2.2.0"' ;;
 esac
 KSTRING="Itel RS4 $LABEL Kernel • $KREL • $DATE"
+# Variant-unique boot.img name so release assets don't collide (GitHub needs
+# unique filenames); the AnyKernel3 zip is already variant-named.
+BOOTIMG="$O/ItelRS4-boot-$VARIANT-$DATE.img"
 
 echo "▶ Packaging variant=$VARIANT  ($KREL)"
 
@@ -32,18 +35,18 @@ cp "$BOOT_IMG" "$W/boot.img"; cp "$O/Image.gz" "$W/Image.gz"
 ( cd "$W"
   magiskboot unpack boot.img >/dev/null 2>&1 || die "magiskboot unpack failed"
   cp Image.gz kernel                                   # stock KERNEL_FMT = gzip
-  magiskboot repack boot.img "$O/boot.img" >/dev/null 2>&1 || die "magiskboot repack failed"
+  magiskboot repack boot.img "$BOOTIMG" >/dev/null 2>&1 || die "magiskboot repack failed"
 )
 # verify: the boot.img we just built embeds OUR kernel. magiskboot DECOMPRESSES
 # the kernel on unpack, so the extracted `kernel` file is the raw Image → cmp it.
 ( cd "$W"
   rm -f kernel ramdisk.cpio dtb kernel_dtb 2>/dev/null || true
-  cp "$O/boot.img" check.img
+  cp "$BOOTIMG" check.img
   magiskboot unpack check.img >/dev/null 2>&1 || die "verify unpack failed"
   cmp -s kernel "$O/Image" && echo "  ✓ boot.img embeds our kernel (byte-identical)" \
     || die "boot.img kernel does NOT match our Image — repack wrong"
 )
-echo "  ✓ $O/boot.img  (sha $(sha256sum "$O/boot.img" | cut -c1-12)…)"
+echo "  ✓ $BOOTIMG  (sha $(sha256sum "$BOOTIMG" | cut -c1-12)…)"
 
 # ── 2) AnyKernel3 zip (ROM-agnostic) ───────────────────────────────────────────
 AKW="$PROJ/.build/ak3-$VARIANT"
@@ -123,5 +126,5 @@ rm -f "$ZIP"
 ( cd "$AKW" && zip -r9 "$ZIP" . -x '.git*' 'README.md' '.github*' >/dev/null ) || die "zip failed"
 echo "  ✓ $ZIP  (sha $(sha256sum "$ZIP" | cut -c1-12)…)"
 
-( cd "$O" && sha256sum boot.img "$(basename "$ZIP")" >> SHA256SUMS )
+( cd "$O" && sha256sum "$(basename "$BOOTIMG")" "$(basename "$ZIP")" >> SHA256SUMS )
 echo "✓ Packaging done → $O/"
