@@ -1,0 +1,16 @@
+# build work dir + outputs (large, reproducible)
+.build/
+out/
+
+# reference material dropped in the tree (not ours to redistribute)
+*.zip
+*.png
+Screenshot*
+*.log
+
+# AnyKernel3 vendored copy keeps its files but not its git metadata
+anykernel/.git/
+
+# personal notes / release drafts (kept local)
+JOURNAL.md
+TELEGRAM-POST*.md
