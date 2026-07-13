@@ -1,0 +1,26 @@
+# ── Network-stack additions (KMI-safe: self-contained net code, built-in) ──
+# TCP congestion control, fair-queue qdiscs, WireGuard. Built-in (=y) so the
+# single Image carries them with no extra .ko to ship. KMI-inert (verified by
+# the build gate).
+
+# Advanced congestion control + a useful set of algorithms
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_TCP_CONG_WESTWOOD=y
+CONFIG_TCP_CONG_VEGAS=y
+CONFIG_TCP_CONG_HTCP=y
+
+# Fair-queue qdiscs (BBR pairs with fq / fq_codel; CAKE for bufferbloat)
+CONFIG_NET_SCH_FQ=y
+CONFIG_NET_SCH_FQ_CODEL=y
+CONFIG_NET_SCH_CAKE=y
+
+# Default the stack to BBR (runtime-tunable via sysctl afterwards)
+CONFIG_DEFAULT_BBR=y
+
+# WireGuard VPN (in-tree since 5.6)
+CONFIG_WIREGUARD=y
+
+# Policy routing (small, handy for VPN split-tunnel / multi-path)
+CONFIG_IP_ADVANCED_ROUTER=y
+CONFIG_IP_MULTIPLE_TABLES=y
