@@ -5,25 +5,27 @@
 # VARIANT=<v> ./package.sh
 set -euo pipefail
 PROJ="${PROJ:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-VARIANT="${VARIANT:?set VARIANT=vanilla|ksu|kowsu}"
-BOOT_IMG="${BOOT_IMG:-/home/riza/droidian-s666ln/boot.img}"
+VARIANT="${VARIANT:?set VARIANT=vanilla|kowsu|ksunext}"
+BOOT_IMG="${BOOT_IMG:-$PROJ/boot.img}"      # stock boot.img (local, git-ignored)
 O="$PROJ/out/$VARIANT"
 die() { echo "✗ $*" >&2; exit 1; }
 
 [[ -f "$O/Image.gz" ]] || die "no Image.gz in $O — build the '$VARIANT' variant first"
+[[ -f "$BOOT_IMG" ]] || die "stock boot.img not found at $BOOT_IMG — drop your device's stock boot.img there (or set BOOT_IMG=...)"
 command -v magiskboot >/dev/null || die "magiskboot not on PATH"
 command -v zip >/dev/null || die "zip not installed"
 
-KREL="$(cat "$PROJ/.build/out-$VARIANT/include/config/kernel.release" 2>/dev/null || echo '5.10.258')"
+KOUT="${KOUT:-$PROJ/.build/out-$VARIANT}"   # build out-dir (matches build.sh's KOUT override)
+KREL="$(cat "$KOUT/include/config/kernel.release" 2>/dev/null || echo '5.10.258')"
 DATE="$(date +%Y%m%d)"
 case "$VARIANT" in
   vanilla) LABEL="Vanilla"
            ROOTLINE='ui_print "   [+] root    : none (vanilla)"' ;;
-  ksu)     LABEL="KernelSU+SusFS"
-           ROOTLINE='ui_print "   [+] root    : KernelSU v3.2.5 + SusFS v2.2.0"' ;;
   kowsu)   LABEL="KoWSU"
            ROOTLINE='ui_print "   [+] root    : KoWSU v3.2.5 (manager v3.2.5+)"' ;;
-  *)       die "unknown VARIANT=$VARIANT (vanilla|ksu|kowsu)" ;;
+  ksunext) LABEL="KernelSU-Next+SusFS"
+           ROOTLINE='ui_print "   [+] root    : KernelSU-Next v3.3.0 (33219) + SusFS v2.2.0 (v3.3.0 manager)"' ;;
+  *)       die "unknown VARIANT=$VARIANT (vanilla|kowsu|ksunext)" ;;
 esac
 KSTRING="Itel RS4 $LABEL Kernel • $KREL • $DATE"
 # Variant-unique boot.img name so release assets don't collide (GitHub needs

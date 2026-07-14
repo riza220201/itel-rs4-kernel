@@ -5,10 +5,11 @@
 #   ./build.sh <variant>            build + KMI-gate + publish Image{,.gz,.lz4}
 #   ./build.sh <variant> --pack     also build AnyKernel3 zip + stock boot.img
 #
-#   variant = vanilla | ksu | kowsu   (all carry BORE + perf + network)
+#   variant = vanilla | kowsu | ksunext   (all carry BORE + perf + network)
 #     vanilla  : stock config + performance + network + BORE (no root)
-#     ksu      : vanilla + official KernelSU v3.2.5 + SusFS v2.2.0
 #     kowsu    : vanilla + KoWSU (KOWX712/KernelSU) standalone, own hiding, no SusFS
+#     ksunext  : vanilla + KernelSU-Next v3.3.0 "Wild" dev-susfs + SusFS v2.2.0
+#                (the root variant — replaced the old official-KernelSU `ksu` one)
 #
 # RECOVERY GOTCHA (learned the hard way): CONFIG_ZRAM MUST NOT be built in on this
 # device — it bricks OrangeFox (ofox runs from /tmp tmpfs, recovery shares the
@@ -18,24 +19,39 @@
 # Root note: KSU-Next + SusFS and SukiSU-Ultra + SusFS lack a clean SusFS pairing
 # on this restructured-KSU 5.10 tree — official KernelSU + SusFS stays the root.
 #
-# Design rule #0: the kernel MUST reproduce module_layout 0x7c24b32d and 0 CRC
-# mismatches vs the 198 stock vendor_dlkm modules, or it won't boot ANY ROM on
-# this device (stock or custom — they all reuse the MTK vendor partition). The
-# build dies loud if that ever regresses.
+# Design rule #0: the kernel MUST reproduce the device's KMI (module_layout +
+# 0 CRC mismatches vs the stock vendor_dlkm modules) or it won't boot ANY ROM on
+# this device (stock or custom — they all reuse the vendor partition). The target
+# CRC lives in device.conf; the build dies loud if it ever regresses.
+#   Proven 2026-07-14: the KMI is CONFIG-borne, not source-borne — pristine Google
+#   GKI android12-5.10-lts (the `common` submodule) + MTK's stock config reproduces
+#   the RS4 KMI (0x7c24b32d, 198/198) and is MORE stable on-device than MillenniumOSS,
+#   so this tool now builds from Google's upstream source by default.
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-# ── Paths (all overridable via env) ────────────────────────────────────────────
+# ── Device config (KMI target + optional paths) — makes the tool device-agnostic ─
+# device.conf carries the one make-or-break device value: MODULE_LAYOUT (the KMI
+# CRC the vendor blobs demand). It is sourced here so it can also set paths;
+# validated below (build refuses if MODULE_LAYOUT is empty/garbage). Env vars set
+# on the command line still win over the file.
 PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DROIDIAN="${DROIDIAN:-/home/riza/droidian-s666ln}"          # shared proven assets
-KERNEL_SRC="${KERNEL_SRC:-$DROIDIAN/kernel-millennium}"     # 5.10.258 MillenniumOSS
-STOCK_CONFIG="${STOCK_CONFIG:-$DROIDIAN/.build/ikconfig/stock.config}"
-BOOT_IMG="${BOOT_IMG:-$DROIDIAN/boot.img}"                  # stock Android 12 boot.img
-VENDOR_KO_DIR="${VENDOR_KO_DIR:-$DROIDIAN/device_itel_S666LN-kernel/vendor_dlkm}"
-CLANG_DIR="${CLANG_DIR:-$DROIDIAN/prebuilts-master/clang/host/linux-x86/clang-r416183b}"
-BUILD_TOOLS="${BUILD_TOOLS:-$DROIDIAN/build/build-tools/path/linux-x86}"
+DEVICE_CONF="${DEVICE_CONF:-$PROJ/device.conf}"
+_ENV_MODULE_LAYOUT="${MODULE_LAYOUT-}"
+# shellcheck source=/dev/null
+[[ -f "$DEVICE_CONF" ]] && source "$DEVICE_CONF"            # sets MODULE_LAYOUT (+ optional paths)
+[[ -n "$_ENV_MODULE_LAYOUT" ]] && MODULE_LAYOUT="$_ENV_MODULE_LAYOUT"
+MODULE_LAYOUT="${MODULE_LAYOUT:-}"                          # validated in preflight
 
-MODULE_LAYOUT_REQ="0x7c24b32d"
+# ── Paths (device.conf > env > defaults) ───────────────────────────────────────
+DROIDIAN="${DROIDIAN:-/home/riza/droidian-s666ln}"          # device assets (config/toolchain/vendor)
+KERNEL_SRC="${KERNEL_SRC:-$PROJ/common}"                    # Google GKI android12-5.10-lts (submodule)
+STOCK_CONFIG="${STOCK_CONFIG:-$DROIDIAN/.build/ikconfig/stock.config}"
+BOOT_IMG="${BOOT_IMG:-$PROJ/boot.img}"                      # stock boot.img (local, git-ignored)
+VENDOR_KO_DIR="${VENDOR_KO_DIR:-$DROIDIAN/device_itel_S666LN-kernel/vendor_dlkm}"
+CLANG_DIR="${CLANG_DIR:-$PROJ/toolchain/clang-r416183b}"    # local (git-ignored; fetch-toolchain.sh)
+BUILD_TOOLS="${BUILD_TOOLS:-$PROJ/toolchain/build/build-tools/path/linux-x86}"  # optional (host tools if absent)
+
 NPROC="$(nproc)"
 
 # ── Small helpers ──────────────────────────────────────────────────────────────
@@ -50,11 +66,11 @@ die()  { echo "$(c '1;31')✗ $*$(c 0)" >&2; exit 1; }
 VARIANT="${1:-}"; PACK=0
 [[ "${2:-}" == "--pack" ]] && PACK=1
 case "$VARIANT" in
-  vanilla|ksu|kowsu) ;;
-  *) die "usage: ./build.sh <vanilla|ksu|kowsu> [--pack]" ;;
+  vanilla|kowsu|ksunext) ;;
+  *) die "usage: ./build.sh <vanilla|kowsu|ksunext> [--pack]" ;;
 esac
 
-KOUT="$PROJ/.build/out-$VARIANT"
+KOUT="${KOUT:-$PROJ/.build/out-$VARIANT}"
 LOG="$PROJ/.build/logs/build-$VARIANT-$(date +%Y%m%d-%H%M%S).log"
 MK=( make -C "$KERNEL_SRC" O="$KOUT" ARCH=arm64 LLVM=1 LLVM_IAS=1
      CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- )
@@ -62,7 +78,7 @@ export PATH="$BUILD_TOOLS:$CLANG_DIR/bin:$PATH"
 # Kernel branding (shows in `uname -r` / Settings → Kernel version, and /proc/version).
 # Pure strings — KMI-inert (same_magic strips the version token at module load).
 BRAND="${BRAND:-Riza}"
-case "$VARIANT" in vanilla) VTAG=vanilla ;; ksu) VTAG=ksu ;; kowsu) VTAG=kowsu ;; esac
+case "$VARIANT" in vanilla) VTAG=vanilla ;; kowsu) VTAG=kowsu ;; ksunext) VTAG=ksunext ;; esac
 export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-riza}"
 export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-RizaKernel}"
 # The AOSP build-tools ship a hermetic python3 (no pyelftools) that now shadows
@@ -75,6 +91,14 @@ done
 
 # ── Preflight ──────────────────────────────────────────────────────────────────
 hdr "Itel RS4 kernel build — variant: $VARIANT"
+# device.conf gate — the tool refuses to build without a valid per-device KMI target.
+[[ -f "$DEVICE_CONF" ]] || die "device.conf not found ($DEVICE_CONF).
+  Create it and set MODULE_LAYOUT to YOUR device's KMI value before building."
+[[ "$MODULE_LAYOUT" =~ ^0x[0-9a-fA-F]{8}$ ]] || die "device.conf: MODULE_LAYOUT is empty or not a CRC like 0x7c24b32d — set YOUR device's KMI module_layout first.
+  Obtain it from your device's own stock vendor_dlkm modules:
+    modprobe --dump-modversions <any_vendor>.ko | awk '\$2==\"module_layout\"{print \$1}'
+  (all the vendor .ko carry the same CRC — it's the exact ABI the blobs demand)."
+ok "device: KMI target module_layout = $MODULE_LAYOUT (from $(basename "$DEVICE_CONF"))"
 [[ -d "$KERNEL_SRC" ]]      || die "kernel source missing: $KERNEL_SRC"
 [[ -f "$STOCK_CONFIG" ]]    || die "stock config missing: $STOCK_CONFIG (extract-ikconfig from boot.img)"
 [[ -x "$CLANG_DIR/bin/clang" ]] || die "clang missing: $CLANG_DIR/bin/clang"
@@ -105,16 +129,16 @@ prepare_source() {
   KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-bore.sh"
   ok "BORE applied"
   case "$VARIANT" in
-    ksu)
-      step "Integrating official KernelSU + SusFS (apply-ksu-susfs.sh)"
-      [[ -x "$PROJ/apply-ksu-susfs.sh" ]] || die "apply-ksu-susfs.sh missing — KSU/SusFS integration not staged yet"
-      KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ksu-susfs.sh"
-      ok "official KernelSU + SusFS applied" ;;
     kowsu)
       step "Integrating KoWSU (KOWX712) standalone (apply-kowsu.sh)"
       [[ -x "$PROJ/apply-kowsu.sh" ]] || die "apply-kowsu.sh missing — KoWSU integration not staged yet"
       KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-kowsu.sh"
       ok "KoWSU integrated" ;;
+    ksunext)
+      step "Integrating KernelSU-Next v3.3.0 Wild + SusFS (apply-ksunext-susfs.sh)"
+      [[ -x "$PROJ/apply-ksunext-susfs.sh" ]] || die "apply-ksunext-susfs.sh missing — KernelSU-Next integration not staged yet"
+      KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ksunext-susfs.sh"
+      ok "KernelSU-Next v3.3.0 + SusFS applied" ;;
     vanilla)
       ok "vanilla: BORE only (no root)" ;;
   esac
@@ -130,8 +154,8 @@ compose_config() {
     --disable TRIM_UNUSED_KSYMS --set-str UNUSED_KSYMS_WHITELIST ""
   local frags=( "$PROJ/config/performance.fragment" "$PROJ/config/network.fragment"
                 "$PROJ/config/bore.fragment" )
-  [[ "$VARIANT" == "ksu" ]]   && frags+=( "$PROJ/config/ksu.fragment" )
-  [[ "$VARIANT" == "kowsu" ]] && frags+=( "$PROJ/config/kowsu.fragment" )
+  [[ "$VARIANT" == "kowsu" ]]   && frags+=( "$PROJ/config/kowsu.fragment" )
+  [[ "$VARIANT" == "ksunext" ]] && frags+=( "$PROJ/config/ksunext.fragment" )
   for f in "${frags[@]}"; do [[ -f "$f" ]] || die "fragment missing: $f"; done
   # Per-variant branding fragment: -$BRAND-$VTAG, git-hash suffix off.
   cat > "$KOUT/brand.fragment" <<EOF
@@ -164,15 +188,21 @@ build_kernel() {
 
 # ── KMI gate ───────────────────────────────────────────────────────────────────
 kmi_gate() {
-  hdr "KMI gate — must reproduce vendor ABI $MODULE_LAYOUT_REQ"
+  hdr "KMI gate — must reproduce vendor ABI $MODULE_LAYOUT (device.conf)"
   local got; got="$(awk '$2=="module_layout"{print $1}' "$KOUT/vmlinux.symvers")"
-  [[ "$got" == "$MODULE_LAYOUT_REQ" ]] \
-    && ok "module_layout = $got — MATCHES the 198 vendor modules" \
-    || die "module_layout = $got, expected $MODULE_LAYOUT_REQ — KMI BROKEN, do NOT ship"
-  step "Full CRC cross-check vs $VENDOR_KO_DIR"
-  [[ -d "$VENDOR_KO_DIR" ]] || die "vendor_dlkm dir missing: $VENDOR_KO_DIR"
-  "$SYSPY" "$PROJ/lib/kmi_check.py" "$KOUT/vmlinux.symvers" "$VENDOR_KO_DIR" \
-    || die "vendor-module CRC mismatch — KMI broken"
+  [[ "$got" == "$MODULE_LAYOUT" ]] \
+    && ok "module_layout = $got — MATCHES the device KMI target" \
+    || die "module_layout = $got, expected $MODULE_LAYOUT — KMI BROKEN, do NOT ship"
+  # Full cross-check needs the stock vendor_dlkm .ko. Optional: a porter may have
+  # the module_layout but not the .ko yet → module_layout check only, with a warning.
+  if [[ -n "$VENDOR_KO_DIR" && -d "$VENDOR_KO_DIR" ]]; then
+    step "Full CRC cross-check vs $VENDOR_KO_DIR"
+    "$SYSPY" "$PROJ/lib/kmi_check.py" "$KOUT/vmlinux.symvers" "$VENDOR_KO_DIR" \
+      || die "vendor-module CRC mismatch — KMI broken"
+  else
+    warn "VENDOR_KO_DIR not set/found — skipping the full vendor-module CRC cross-check"
+    warn "(module_layout matched, but set VENDOR_KO_DIR in device.conf for the strongest guarantee)"
+  fi
 }
 
 # ── Publish Image artifacts ────────────────────────────────────────────────────

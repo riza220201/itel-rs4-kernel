@@ -1,0 +1,22 @@
+# ── KernelSU-Next v3.3.0 "Wild" (dev-susfs) + SusFS v2.2.0 (ksunext variant) ─────
+# The LATEST KernelSU-Next line (v3.3.0, restructured core/feature/hook/supercall)
+# with SusFS — via pershoot's `dev-susfs` branch ("Wild KSU"), the maintained way
+# the community (WildKernels) runs current KSU-Next + SusFS. Kernel-side is stock
+# simonpunk SusFS v2.2.0 (gki-android12-5.10) + pershoot's 2 extension cherry-picks
+# (build-with-no-features + SuSFS/Toolkit coexistence). No `10_` patch — SusFS is
+# in-driver on dev-susfs. Hooking is kprobes-based (KSU depends on KPROBES||SUSFS;
+# stock has KPROBES=y). Self-contained driver → KMI stays 0x7c24b32d (gate checks).
+#
+# Kernel reports KSU version 33219 (== KernelSU-Next v3.3.0 dev HEAD). Manager:
+# install the stock KernelSU-Next v3.3.0 manager (>= 33219) or su is denied.
+CONFIG_KSU=y
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y

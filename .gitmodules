@@ -1,0 +1,5 @@
+[submodule "common"]
+	path = common
+	url = https://android.googlesource.com/kernel/common
+	branch = android12-5.10-lts
+	shallow = true
