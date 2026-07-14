@@ -130,5 +130,11 @@ rm -f "$ZIP"
 ( cd "$AKW" && zip -r9 "$ZIP" . -x '.git*' 'README.md' '.github*' >/dev/null ) || die "zip failed"
 echo "  ✓ $ZIP  (sha $(sha256sum "$ZIP" | cut -c1-12)…)"
 
-( cd "$O" && sha256sum "$(basename "$BOOTIMG")" "$(basename "$ZIP")" >> SHA256SUMS )
-echo "✓ Packaging done → $O/"
+# Trim the output dir to ONLY the release flashables — the just-built boot .img +
+# AnyKernel3 .zip. Everything else (Image/Image.gz/Image.lz4, kernel.config,
+# vmlinux.symvers, any older-dated builds, stale SHA256SUMS) is a build byproduct
+# and is removed here so out/<variant>/ is upload-ready with no manual cleanup.
+# The raw build products still live in .build/out-$VARIANT if you need them.
+find "$O" -maxdepth 1 -type f \
+     ! -name "$(basename "$BOOTIMG")" ! -name "$(basename "$ZIP")" -delete
+echo "✓ Packaging done → $O/  (only $(basename "$BOOTIMG") + $(basename "$ZIP"))"
