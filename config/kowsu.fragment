@@ -1,0 +1,9 @@
+# ── KoWSU (KOWX712/KernelSU, pinned v3.2.5 → version 32525) — kowsu variant ──────
+# A lean, restructured KSU fork with its OWN kernel-side hiding (kernel_umount +
+# selinux_hide + sucompat) — no SusFS layer (SusFS's patches don't target KoWSU's
+# rewritten tree). Built-in (=y), self-contained driver → KMI stays 0x7c24b32d
+# (build gate re-checks). Depends on KPROBES + EXT4_FS, both already =y in stock.
+#
+# Manager: install the KOWX712 KernelSU manager v3.2.5 or newer (kernel reports
+# 32525; the manager must be >= the kernel version to grant root).
+CONFIG_KSU=y
