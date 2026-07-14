@@ -5,7 +5,7 @@
 # VARIANT=<v> ./package.sh
 set -euo pipefail
 PROJ="${PROJ:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-VARIANT="${VARIANT:?set VARIANT=vanilla|ksu}"
+VARIANT="${VARIANT:?set VARIANT=vanilla|ksu|kowsu}"
 BOOT_IMG="${BOOT_IMG:-/home/riza/droidian-s666ln/boot.img}"
 O="$PROJ/out/$VARIANT"
 die() { echo "✗ $*" >&2; exit 1; }
@@ -20,7 +20,10 @@ case "$VARIANT" in
   vanilla) LABEL="Vanilla"
            ROOTLINE='ui_print "   [+] root    : none (vanilla)"' ;;
   ksu)     LABEL="KernelSU+SusFS"
-           ROOTLINE='ui_print "   [+] root    : KernelSU + SusFS v2.2.0"' ;;
+           ROOTLINE='ui_print "   [+] root    : KernelSU v3.2.5 + SusFS v2.2.0"' ;;
+  kowsu)   LABEL="KoWSU"
+           ROOTLINE='ui_print "   [+] root    : KoWSU v3.2.5 (manager v3.2.5+)"' ;;
+  *)       die "unknown VARIANT=$VARIANT (vanilla|ksu|kowsu)" ;;
 esac
 KSTRING="Itel RS4 $LABEL Kernel • $KREL • $DATE"
 # Variant-unique boot.img name so release assets don't collide (GitHub needs
@@ -99,9 +102,10 @@ ui_print " ";
 ui_print "   ────────────────────────────────────────────";
 ui_print "   [+] vendor modules load native (module_layout";
 ui_print "       0x7c24b32d — every ROM's HALs intact)";
-ui_print "   [+] network : BBR · fq/cake · WireGuard";
+ui_print "   [+] sched   : BORE default-on (sysctl kernel.sched_bore)";
+ui_print "   [+] network : BBR · fq/cake · WireGuard · TTL/HL";
 ui_print "   [+] storage : BFQ/Kyber · all governors";
-ui_print "   [+] memory  : zram + zstd/lz4";
+ui_print "   [+] memory  : zstd/lz4/lzo-rle  (zram: load as module)";
 $ROOTLINE;
 ui_print "   ────────────────────────────────────────────";
 ui_print " ";
