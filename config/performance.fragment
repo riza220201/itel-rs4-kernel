@@ -17,9 +17,14 @@ CONFIG_CPU_FREQ_GOV_ONDEMAND=y
 CONFIG_CPU_FREQ_GOV_CONSERVATIVE=y
 CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
 
-# ZRAM / zswap with modern compressors (better swap on a 4-8 GB phone)
-CONFIG_ZRAM=y
-CONFIG_ZRAM_WRITEBACK=y
+# ZRAM is deliberately NOT built into the kernel. On this Helio G99 / MT6789,
+# CONFIG_ZRAM=y bricks OrangeFox recovery: ofox runs from /tmp (tmpfs), and since
+# the device has no dedicated recovery partition, recovery shares the `boot`
+# kernel — built-in ZRAM's early mm collides with the tmpfs setup and the recovery
+# boot bounces. Load zram as a KSU-Next kernel module at NORMAL boot instead.
+# The compressors stay built-in so a zram module (ours or external) can use them.
 CONFIG_CRYPTO_ZSTD=y
 CONFIG_CRYPTO_LZ4=y
 CONFIG_CRYPTO_LZ4HC=y
+# lzo-rle: Android's default zram compressor (fastest). KMI-safe, recovery-safe.
+CONFIG_CRYPTO_LZO=y

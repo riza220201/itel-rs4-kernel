@@ -1,0 +1,9 @@
+# ── BORE scheduler (Burst-Oriented Response Enhancer) — all v2 variants ──────────
+# firelzrd bore5.1.0 backported to android12-5.10 (minimal, atavistic-free). Burst
+# state is packed into GKI KABI-reserved sched_entity slots via ANDROID_KABI_USE,
+# which collapses to the original reserved u64 under __GENKSYMS__ → module_layout
+# and every vendor-referenced CRC stay byte-identical (build gate re-verifies).
+# Experimental on this MediaTek EAS SoC; runtime on/off without reflashing:
+#   echo 0 > /proc/sys/kernel/sched_bore     # disable (back to stock CFS)
+#   echo 1 > /proc/sys/kernel/sched_bore     # enable (default)
+CONFIG_SCHED_BORE=y

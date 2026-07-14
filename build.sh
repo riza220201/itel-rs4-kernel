@@ -5,9 +5,18 @@
 #   ./build.sh <variant>            build + KMI-gate + publish Image{,.gz,.lz4}
 #   ./build.sh <variant> --pack     also build AnyKernel3 zip + stock boot.img
 #
-#   variant = vanilla | ksu
-#     vanilla  : stock config + performance + network fragments (no root)
-#     ksu      : vanilla + official KernelSU + SusFS
+#   variant = vanilla | ksu | kowsu   (all carry BORE + perf + network)
+#     vanilla  : stock config + performance + network + BORE (no root)
+#     ksu      : vanilla + official KernelSU v3.2.5 + SusFS v2.2.0
+#     kowsu    : vanilla + KoWSU (KOWX712/KernelSU) standalone, own hiding, no SusFS
+#
+# RECOVERY GOTCHA (learned the hard way): CONFIG_ZRAM MUST NOT be built in on this
+# device — it bricks OrangeFox (ofox runs from /tmp tmpfs, recovery shares the
+# `boot` kernel since there's no recovery partition, and built-in ZRAM's early mm
+# collides with that). So ZRAM stays OUT of the kernel (load it as a KSU-Next
+# module at normal boot). BORE was wrongly blamed for this and is fine — it's on.
+# Root note: KSU-Next + SusFS and SukiSU-Ultra + SusFS lack a clean SusFS pairing
+# on this restructured-KSU 5.10 tree — official KernelSU + SusFS stays the root.
 #
 # Design rule #0: the kernel MUST reproduce module_layout 0x7c24b32d and 0 CRC
 # mismatches vs the 198 stock vendor_dlkm modules, or it won't boot ANY ROM on
@@ -41,8 +50,8 @@ die()  { echo "$(c '1;31')✗ $*$(c 0)" >&2; exit 1; }
 VARIANT="${1:-}"; PACK=0
 [[ "${2:-}" == "--pack" ]] && PACK=1
 case "$VARIANT" in
-  vanilla|ksu) ;;
-  *) die "usage: ./build.sh <vanilla|ksu> [--pack]" ;;
+  vanilla|ksu|kowsu) ;;
+  *) die "usage: ./build.sh <vanilla|ksu|kowsu> [--pack]" ;;
 esac
 
 KOUT="$PROJ/.build/out-$VARIANT"
@@ -53,7 +62,7 @@ export PATH="$BUILD_TOOLS:$CLANG_DIR/bin:$PATH"
 # Kernel branding (shows in `uname -r` / Settings → Kernel version, and /proc/version).
 # Pure strings — KMI-inert (same_magic strips the version token at module load).
 BRAND="${BRAND:-Riza}"
-case "$VARIANT" in vanilla) VTAG=vanilla ;; ksu) VTAG=ksu ;; esac
+case "$VARIANT" in vanilla) VTAG=vanilla ;; ksu) VTAG=ksu ;; kowsu) VTAG=kowsu ;; esac
 export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-riza}"
 export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-RizaKernel}"
 # The AOSP build-tools ship a hermetic python3 (no pyelftools) that now shadows
@@ -86,14 +95,29 @@ cleanup_source() {
 trap cleanup_source EXIT
 
 prepare_source() {
-  [[ "$VARIANT" == "ksu" ]] || { ok "vanilla: no source patches (config-only)"; return 0; }
   [[ -z "$(git -C "$KERNEL_SRC" status --porcelain -uno)" ]] \
     || die "kernel source has uncommitted tracked changes — refuse to patch on top; inspect $KERNEL_SRC"
   SOURCE_DIRTY=1
-  step "Integrating official KernelSU + SusFS (apply-ksu-susfs.sh)"
-  [[ -x "$PROJ/apply-ksu-susfs.sh" ]] || die "apply-ksu-susfs.sh missing — KSU/SusFS integration not staged yet"
-  KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ksu-susfs.sh"
-  ok "official KernelSU + SusFS applied"
+  # BORE scheduler — applied to EVERY variant (KMI-safe KABI packing; default-on
+  # via kernel.sched_bore). Innocent of the recovery bounce — that was built-in ZRAM.
+  step "Applying BORE scheduler backport (apply-bore.sh)"
+  [[ -x "$PROJ/apply-bore.sh" ]] || die "apply-bore.sh missing — BORE not staged yet"
+  KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-bore.sh"
+  ok "BORE applied"
+  case "$VARIANT" in
+    ksu)
+      step "Integrating official KernelSU + SusFS (apply-ksu-susfs.sh)"
+      [[ -x "$PROJ/apply-ksu-susfs.sh" ]] || die "apply-ksu-susfs.sh missing — KSU/SusFS integration not staged yet"
+      KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ksu-susfs.sh"
+      ok "official KernelSU + SusFS applied" ;;
+    kowsu)
+      step "Integrating KoWSU (KOWX712) standalone (apply-kowsu.sh)"
+      [[ -x "$PROJ/apply-kowsu.sh" ]] || die "apply-kowsu.sh missing — KoWSU integration not staged yet"
+      KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-kowsu.sh"
+      ok "KoWSU integrated" ;;
+    vanilla)
+      ok "vanilla: BORE only (no root)" ;;
+  esac
 }
 
 # ── Compose .config = stock + fragments ────────────────────────────────────────
@@ -104,8 +128,10 @@ compose_config() {
   # (cosmetic to KMI; the abs path doesn't exist here so trim would fail).
   "$KERNEL_SRC/scripts/config" --file "$KOUT/.config" \
     --disable TRIM_UNUSED_KSYMS --set-str UNUSED_KSYMS_WHITELIST ""
-  local frags=( "$PROJ/config/performance.fragment" "$PROJ/config/network.fragment" )
-  [[ "$VARIANT" == "ksu" ]] && frags+=( "$PROJ/config/ksu.fragment" )
+  local frags=( "$PROJ/config/performance.fragment" "$PROJ/config/network.fragment"
+                "$PROJ/config/bore.fragment" )
+  [[ "$VARIANT" == "ksu" ]]   && frags+=( "$PROJ/config/ksu.fragment" )
+  [[ "$VARIANT" == "kowsu" ]] && frags+=( "$PROJ/config/kowsu.fragment" )
   for f in "${frags[@]}"; do [[ -f "$f" ]] || die "fragment missing: $f"; done
   # Per-variant branding fragment: -$BRAND-$VTAG, git-hash suffix off.
   cat > "$KOUT/brand.fragment" <<EOF
