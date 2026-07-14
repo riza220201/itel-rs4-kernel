@@ -2,11 +2,18 @@
 .build/
 out/
 
+# prebuilt clang toolchain (1.4G of binaries — never commit; run fetch-toolchain.sh)
+toolchain/
+
 # reference material dropped in the tree (not ours to redistribute)
 *.zip
 *.png
 Screenshot*
 *.log
+
+# stock firmware boot.img — device-specific OEM firmware, kept local (drop your
+# own for --pack; the build reads $PROJ/boot.img by default)
+*.img
 
 # AnyKernel3 vendored copy keeps its files but not its git metadata
 anykernel/.git/
