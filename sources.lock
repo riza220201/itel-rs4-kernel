@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# sources.lock — pinned commit set for REPRODUCIBLE builds
+#
+# The single source of truth for every out-of-tree source the variants pull. Each
+# apply-*.sh (and package.sh) sources this file, so what a variant IS is fixed here,
+# not by whatever a branch tip happens to be on the day you build. Change a value
+# ONLY deliberately — bumping a SHA changes what the variant is, and the build gates
+# (KMI + the version-drift checks below) re-verify on the next build.
+#
+# The `common` kernel source is pinned separately, as a git submodule (.gitmodules
+# → af99d873 = Google GKI android12-5.10-lts @ 5.10.260). Listed here for the record.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── kernel source + toolchain (informational; enforced elsewhere) ───────────────
+KERNEL_COMMON="af99d873fab6c6ebc7c9d6905501ea17e1caa0fc"   # common submodule — GKI android12-5.10-lts @ 5.10.260
+CLANG_VER="clang-r416183b"                                  # AOSP clang 12.0.5 (fetch-toolchain.sh)
+
+# ── ksunext variant: KernelSU-Next v3.3.0 "Wild" (dev-susfs) + SusFS v2.2.0 ──────
+# WILDKSU_REF is the EXACT commit the driver is built from (was the moving `dev-susfs`
+# branch — that drift was the whole point of pinning). WILDKSU_VERBASE is the version
+# anchor: 30000 + rev-count(VERBASE) is the KSU version the kernel reports, which the
+# manager APK must be >=. apply-ksunext-susfs.sh recomputes it and DIES on any drift
+# from WILDKSU_VER_EXPECT, so the reported version and the installer banner can't
+# disagree (that was a latent bug).
+WILDKSU_REF="26fded805206ae4542f4745e09cc465412994492"      # pershoot/KernelSU-Next dev-susfs @ this commit
+WILDKSU_VERBASE="706413e0ddd0ed644b55b7e60397546d4ea57257"  # merge-base w/ dev = KSU-Next v3.3.0 HEAD (version anchor)
+WILDKSU_VER_EXPECT="33219"                                   # 30000 + rev-count(WILDKSU_VERBASE); must match at build
+SUSFS_REF="f03c1cbc49a8a4eecfb00481b38929cfef79ee4d"         # simonpunk gki-android12-5.10 + 2 pershoot cherry-picks
+
+# ── kowsu variant: KOWX712/KernelSU standalone (own hiding, no SusFS) ────────────
+# Pinned by SHA (stronger than the v3.2.5 tag — a tag can be re-pointed). Version is
+# 30000 + rev-count; apply-kowsu.sh verifies it == KOWSU_VER_EXPECT.
+KOWSU_REF="b0bc817b4e966aa6aa830834eaf6ef765d821d40"         # KOWX712/KernelSU tag v3.2.5 @ this commit
+KOWSU_VER_EXPECT="32525"                                     # 30000 + rev-count(KOWSU_REF)

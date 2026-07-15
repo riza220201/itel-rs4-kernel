@@ -18,6 +18,15 @@ CONFIG_NET_SCH_CAKE=y
 # Default the stack to BBR (runtime-tunable via sysctl afterwards)
 CONFIG_DEFAULT_BBR=y
 
+# Pair the default qdisc with BBR: fq (fair-queue) does the packet pacing BBR relies
+# on + per-flow isolation — the canonical BBR+fq setup. Stock left the default at the
+# dumb pfifo_fast, so BBR wasn't paced by default. NET_SCH_DEFAULT unlocks the choice
+# (it's gated behind that menuconfig); DEFAULT_FQ then sets net default_qdisc = fq.
+# A ROM can still override at runtime via net.core.default_qdisc. KMI-inert (a boot
+# default string; touches no struct). sch_fq is already built in above.
+CONFIG_NET_SCH_DEFAULT=y
+CONFIG_DEFAULT_FQ=y
+
 # WireGuard VPN (in-tree since 5.6)
 CONFIG_WIREGUARD=y
 
