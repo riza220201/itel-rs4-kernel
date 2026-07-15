@@ -1,22 +1,60 @@
 #!/usr/bin/env bash
 # Package a built variant into: (1) a stock boot.img with our kernel swapped in
-# (gzip, matching stock KERNEL_FMT) for direct antumbra DA flash, and (2) a
+# (matching the stock kernel format — KERNEL_FMT) for direct DA flash, and (2) a
 # ROM-agnostic AnyKernel3 zip. Called by build.sh --pack, or standalone with
 # VARIANT=<v> ./package.sh
 set -euo pipefail
 PROJ="${PROJ:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 VARIANT="${VARIANT:?set VARIANT=vanilla|kowsu|ksunext}"
+# Pull the pinned KSU version from the same sources.lock the build uses, so the
+# installer banner can't disagree with the version the kernel actually reports.
+LOCKFILE="${LOCKFILE:-$PROJ/sources.lock}"
+# shellcheck source=/dev/null
+[[ -f "$LOCKFILE" ]] && source "$LOCKFILE"
+KSUNVER="${WILDKSU_VER_EXPECT:-33219}"
+
+# ── Device identity: env (from build.sh) wins; else device.conf; else defaults ──
+# Sourcing device.conf is only for standalone `VARIANT=x ./package.sh` runs (build.sh
+# already passes these through), so guard on a key var to avoid clobbering that env.
+DEVICE_CONF="${DEVICE_CONF:-$PROJ/device.conf}"
+if [[ -z "${DEVICE_LABEL:-}${MODULE_LAYOUT:-}" && -f "$DEVICE_CONF" ]]; then
+  # shellcheck source=/dev/null
+  source "$DEVICE_CONF"
+fi
+DEVICE_LABEL="${DEVICE_LABEL:-Itel RS4}"
+DEVICE_SOC="${DEVICE_SOC:-MediaTek MT6789 · Helio G99}"
+DEVICE_NAMES="${DEVICE_NAMES:-S666LN itel-S666LN RS4 Itel-S666LN}"
+KERNEL_FMT="${KERNEL_FMT:-gzip}"
+MODULE_LAYOUT="${MODULE_LAYOUT:-0x7c24b32d}"
+BRAND="${BRAND:-Riza}"
+DEVSLUG="$(echo "$DEVICE_LABEL" | tr -cd '[:alnum:]')"   # release-file prefix (e.g. ItelRS4)
+
 BOOT_IMG="${BOOT_IMG:-$PROJ/boot.img}"      # stock boot.img (local, git-ignored)
 O="$PROJ/out/$VARIANT"
 die() { echo "✗ $*" >&2; exit 1; }
 
-[[ -f "$O/Image.gz" ]] || die "no Image.gz in $O — build the '$VARIANT' variant first"
+# Stock boot.img kernel format → which built artifact we swap in. magiskboot detects
+# the format of the file we hand it and repacks to match the stock kernel's format.
+case "$KERNEL_FMT" in
+  gzip) KIMG="Image.gz" ;;
+  lz4)  KIMG="Image.lz4" ;;
+  raw)  KIMG="Image" ;;
+  *)    die "unknown KERNEL_FMT=$KERNEL_FMT (expected gzip|lz4|raw)" ;;
+esac
+
+[[ -f "$O/$KIMG" ]] || die "no $KIMG in $O — build the '$VARIANT' variant first"
 [[ -f "$BOOT_IMG" ]] || die "stock boot.img not found at $BOOT_IMG — drop your device's stock boot.img there (or set BOOT_IMG=...)"
 command -v magiskboot >/dev/null || die "magiskboot not on PATH"
 command -v zip >/dev/null || die "zip not installed"
 
 KOUT="${KOUT:-$PROJ/.build/out-$VARIANT}"   # build out-dir (matches build.sh's KOUT override)
-KREL="$(cat "$KOUT/include/config/kernel.release" 2>/dev/null || echo '5.10.258')"
+# kernel.release is written by the build and should always be here; if it's somehow
+# missing, derive VERSION.PATCHLEVEL.SUBLEVEL from the source Makefile rather than a
+# stale hardcoded number.
+KREL="$(cat "$KOUT/include/config/kernel.release" 2>/dev/null || true)"
+if [[ -z "$KREL" ]]; then
+  KREL="$(awk '/^VERSION/{v=$3}/^PATCHLEVEL/{p=$3}/^SUBLEVEL/{s=$3}END{print v"."p"."s}' "${KERNEL_SRC:-$PROJ/common}/Makefile" 2>/dev/null || echo unknown)"
+fi
 DATE="$(date +%Y%m%d)"
 case "$VARIANT" in
   vanilla) LABEL="Vanilla"
@@ -24,22 +62,22 @@ case "$VARIANT" in
   kowsu)   LABEL="KoWSU"
            ROOTLINE='ui_print "   [+] root    : KoWSU v3.2.5 (manager v3.2.5+)"' ;;
   ksunext) LABEL="KernelSU-Next+SusFS"
-           ROOTLINE='ui_print "   [+] root    : KernelSU-Next v3.3.0 (33219) + SusFS v2.2.0 (v3.3.0 manager)"' ;;
+           ROOTLINE="ui_print \"   [+] root    : KernelSU-Next v3.3.0 ($KSUNVER) + SusFS v2.2.0 (v3.3.0 manager)\"" ;;
   *)       die "unknown VARIANT=$VARIANT (vanilla|kowsu|ksunext)" ;;
 esac
-KSTRING="Itel RS4 $LABEL Kernel • $KREL • $DATE"
+KSTRING="$DEVICE_LABEL $LABEL Kernel • $KREL • $DATE"
 # Variant-unique boot.img name so release assets don't collide (GitHub needs
 # unique filenames); the AnyKernel3 zip is already variant-named.
-BOOTIMG="$O/ItelRS4-boot-$VARIANT-$DATE.img"
+BOOTIMG="$O/${DEVSLUG}-boot-$VARIANT-$DATE.img"
 
 echo "▶ Packaging variant=$VARIANT  ($KREL)"
 
-# ── 1) Stock boot.img with our kernel (gzip) ───────────────────────────────────
+# ── 1) Stock boot.img with our kernel (KERNEL_FMT=$KERNEL_FMT) ──────────────────
 W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
-cp "$BOOT_IMG" "$W/boot.img"; cp "$O/Image.gz" "$W/Image.gz"
+cp "$BOOT_IMG" "$W/boot.img"; cp "$O/$KIMG" "$W/$KIMG"
 ( cd "$W"
   magiskboot unpack boot.img >/dev/null 2>&1 || die "magiskboot unpack failed"
-  cp Image.gz kernel                                   # stock KERNEL_FMT = gzip
+  cp "$KIMG" kernel                                    # swap in our kernel (stock fmt: $KERNEL_FMT)
   magiskboot repack boot.img "$BOOTIMG" >/dev/null 2>&1 || die "magiskboot repack failed"
 )
 # verify: the boot.img we just built embeds OUR kernel. magiskboot DECOMPRESSES
@@ -62,8 +100,12 @@ rm -rf "$AKW"; cp -r "$PROJ/anykernel" "$AKW"; rm -rf "$AKW/.git"
 # IS_SLOT_DEVICE=auto (forcing =1 made OrangeFox abort "unable to determine slot"),
 # and the init_boot conditional picks the right install path (this device is
 # Android 12 → ramdisk in boot → dump/write_boot).
+# AnyKernel3 device.name1..N from DEVICE_NAMES (space-separated)
+DEVNAMES_BLOCK=""; _i=1
+for _n in $DEVICE_NAMES; do DEVNAMES_BLOCK+="device.name${_i}=${_n}"$'\n'; _i=$((_i+1)); done
+DEVNAMES_BLOCK="${DEVNAMES_BLOCK%$'\n'}"
 cat > "$AKW/anykernel.sh" <<AKEOF
-### AnyKernel3 — Itel RS4 (S666LN / MT6789)
+### AnyKernel3 — $DEVICE_LABEL
 properties() { '
 kernel.string=$KSTRING
 do.devicecheck=0
@@ -71,11 +113,7 @@ do.modules=0
 do.systemless=0
 do.cleanup=1
 do.cleanuponabort=0
-device.name1=S666LN
-device.name2=itel-S666LN
-device.name3=RS4
-device.name4=Itel-S666LN
-device.name5=
+${DEVNAMES_BLOCK}
 supported.versions=
 supported.patchlevels=
 supported.vendorpatchlevels=
@@ -90,20 +128,18 @@ PATCH_VBMETA_FLAG=auto;
 . tools/ak3-core.sh;
 
 ui_print " ";
-ui_print "   ╔══════════════════════════════════════════╗";
-ui_print "   ║                                          ║";
-ui_print "   ║       I T E L   R S 4   K E R N E L       ║";
-ui_print "   ║      MediaTek MT6789 · Helio G99          ║";
-ui_print "   ║      Linux 5.10 · KMI-clean GKI           ║";
-ui_print "   ║                                          ║";
-ui_print "   ╚══════════════════════════════════════════╝";
+ui_print "   ══════════════════════════════════════════════";
+ui_print "     $DEVICE_LABEL — custom kernel";
+ui_print "     $DEVICE_SOC";
+ui_print "     Linux $KREL · KMI-clean GKI";
+ui_print "   ══════════════════════════════════════════════";
 ui_print " ";
 ui_print "     variant : $LABEL";
 ui_print "     version : $KREL";
 ui_print " ";
 ui_print "   ────────────────────────────────────────────";
 ui_print "   [+] vendor modules load native (module_layout";
-ui_print "       0x7c24b32d — every ROM's HALs intact)";
+ui_print "       $MODULE_LAYOUT — every ROM's HALs intact)";
 ui_print "   [+] sched   : BORE default-on (sysctl kernel.sched_bore)";
 ui_print "   [+] network : BBR · fq/cake · WireGuard · TTL/HL";
 ui_print "   [+] storage : BFQ/Kyber · all governors";
@@ -127,7 +163,7 @@ AKEOF
 rm -f "$AKW"/Image "$AKW"/Image.* 2>/dev/null || true
 cp "$O/Image" "$AKW/Image"
 
-ZIP="$O/ItelRS4-Kernel-$VARIANT-$DATE.zip"
+ZIP="$O/${DEVSLUG}-Kernel-$VARIANT-$DATE.zip"
 rm -f "$ZIP"
 ( cd "$AKW" && zip -r9 "$ZIP" . -x '.git*' 'README.md' '.github*' >/dev/null ) || die "zip failed"
 echo "  ✓ $ZIP  (sha $(sha256sum "$ZIP" | cut -c1-12)…)"

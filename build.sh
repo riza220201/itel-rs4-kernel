@@ -44,15 +44,22 @@ _ENV_MODULE_LAYOUT="${MODULE_LAYOUT-}"
 MODULE_LAYOUT="${MODULE_LAYOUT:-}"                          # validated in preflight
 
 # ── Paths (device.conf > env > defaults) ───────────────────────────────────────
-DROIDIAN="${DROIDIAN:-/home/riza/droidian-s666ln}"          # device assets (config/toolchain/vendor)
 KERNEL_SRC="${KERNEL_SRC:-$PROJ/common}"                    # Google GKI android12-5.10-lts (submodule)
-STOCK_CONFIG="${STOCK_CONFIG:-$DROIDIAN/.build/ikconfig/stock.config}"
+STOCK_CONFIG="${STOCK_CONFIG:-$PROJ/.build/ikconfig/stock.config}"  # from ./extract-config.sh (device's boot.img)
 BOOT_IMG="${BOOT_IMG:-$PROJ/boot.img}"                      # stock boot.img (local, git-ignored)
-VENDOR_KO_DIR="${VENDOR_KO_DIR:-$DROIDIAN/device_itel_S666LN-kernel/vendor_dlkm}"
+VENDOR_KO_DIR="${VENDOR_KO_DIR:-$PROJ/.build/vendor_dlkm}"  # optional; local stock vendor_dlkm/*.ko for the full CRC gate
 CLANG_DIR="${CLANG_DIR:-$PROJ/toolchain/clang-r416183b}"    # local (git-ignored; fetch-toolchain.sh)
 BUILD_TOOLS="${BUILD_TOOLS:-$PROJ/toolchain/build/build-tools/path/linux-x86}"  # optional (host tools if absent)
 
-NPROC="$(nproc)"
+# ── Device identity (device.conf > env > defaults) — branding + packaging ───────
+# What a porter changes for their device (all optional; ship filled for the RS4).
+DEVICE_LABEL="${DEVICE_LABEL:-Itel RS4}"                    # human name in banners / installer
+DEVICE_SOC="${DEVICE_SOC:-MediaTek MT6789 · Helio G99}"     # shown in the installer banner
+DEVICE_NAMES="${DEVICE_NAMES:-S666LN itel-S666LN RS4 Itel-S666LN}"  # AnyKernel3 device.name1..N
+KERNEL_FMT="${KERNEL_FMT:-gzip}"                            # stock boot.img kernel format: gzip|lz4|raw
+BRAND="${BRAND:-Riza}"                                      # LOCALVERSION → 5.10.x-<BRAND>-<variant>
+
+NPROC="${JOBS:-$(nproc)}"                                   # override with JOBS= if the LTO link near-OOMs
 
 # ── Small helpers ──────────────────────────────────────────────────────────────
 c() { printf '\033[%sm' "$1"; }
@@ -72,15 +79,50 @@ esac
 
 KOUT="${KOUT:-$PROJ/.build/out-$VARIANT}"
 LOG="$PROJ/.build/logs/build-$VARIANT-$(date +%Y%m%d-%H%M%S).log"
+# Reproducibility: the kernel maps the source tree out of embedded paths but NOT the
+# O= out-dir, so an out-of-tree build leaks the absolute objtree path into vmlinux
+# (comp_dir etc.) → two builds at different locations differ even with a pinned
+# timestamp. Map both trees to stable tokens so the Image is location-independent.
+# -ffile-prefix-map only rewrites embedded path strings, not code or genksyms type
+# hashes → KMI-inert (the gate re-verifies 198/198 anyway).
+REPRO_FLAGS="-ffile-prefix-map=$KOUT=/build/obj -ffile-prefix-map=$KERNEL_SRC=/build/src"
 MK=( make -C "$KERNEL_SRC" O="$KOUT" ARCH=arm64 LLVM=1 LLVM_IAS=1
-     CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu- )
+     CROSS_COMPILE=aarch64-linux-gnu- CLANG_TRIPLE=aarch64-linux-gnu-
+     KCFLAGS="$REPRO_FLAGS" )
 export PATH="$BUILD_TOOLS:$CLANG_DIR/bin:$PATH"
+# The vendored AOSP build-tools `bison` is a wrapper that points BISON_PKGDATADIR at
+# prebuilts/build-tools/common/bison (m4sugar.m4) — but if only linux-x86 was vendored
+# that path dangles and bison dies ("m4sugar.m4: cannot open"). bison only generates
+# host-side Kconfig/dtc/genksyms parsers (zero kernel-ABI impact), and the hermetic
+# bison 3.5 can't borrow the system 3.8 data (skeleton version mismatch) — so when the
+# hermetic data dir is absent, route bison+m4 to the system copies via a shim dir
+# prepended to PATH (the rest of build-tools stays in use).
+if [[ -x "$BUILD_TOOLS/bison" ]]; then
+  _bpk="$(cd "$BUILD_TOOLS" 2>/dev/null && readlink -f ../../../../prebuilts/build-tools/common/bison 2>/dev/null || true)"
+  if [[ ! -f "$_bpk/m4sugar/m4sugar.m4" ]]; then
+    if [[ -x /usr/bin/bison && -f "$(/usr/bin/bison --print-datadir 2>/dev/null)/m4sugar/m4sugar.m4" ]]; then
+      SHIM="$PROJ/.build/toolshim"; mkdir -p "$SHIM"
+      ln -sfn /usr/bin/bison "$SHIM/bison"; ln -sfn /usr/bin/m4 "$SHIM/m4"
+      export PATH="$SHIM:$PATH"
+      warn "vendored bison data missing — using system bison $(/usr/bin/bison --version | awk 'NR==1{print $NF}') for host parsers (KMI-inert)"
+    else
+      die "vendored bison data missing and no working system bison — install bison (apt install bison m4)"
+    fi
+  fi
+fi
 # Kernel branding (shows in `uname -r` / Settings → Kernel version, and /proc/version).
 # Pure strings — KMI-inert (same_magic strips the version token at module load).
-BRAND="${BRAND:-Riza}"
+# BRAND is resolved above (device.conf > env > default).
 case "$VARIANT" in vanilla) VTAG=vanilla ;; kowsu) VTAG=kowsu ;; ksunext) VTAG=ksunext ;; esac
 export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-riza}"
 export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-RizaKernel}"
+# Pin the build timestamp to the kernel-source commit date so /proc/version — and thus
+# the Image/boot.img bytes — are REPRODUCIBLE for a given {source, config, toolchain}:
+# two builds of the same inputs come out identical instead of differing by wall-clock
+# build time. Override with SOURCE_DATE_EPOCH=… if you need a specific stamp.
+SRC_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$KERNEL_SRC" log -1 --format=%ct 2>/dev/null || echo 0)}"
+export SOURCE_DATE_EPOCH="$SRC_EPOCH"
+export KBUILD_BUILD_TIMESTAMP="${KBUILD_BUILD_TIMESTAMP:-$(date -u -d "@$SRC_EPOCH" 2>/dev/null || date -u)}"
 # The AOSP build-tools ship a hermetic python3 (no pyelftools) that now shadows
 # PATH — pin a system python that actually has elftools for the KMI cross-check.
 SYSPY=""
@@ -90,7 +132,7 @@ done
 [[ -n "$SYSPY" ]] || die "no python3 with pyelftools found (needed for KMI cross-check): pip install pyelftools"
 
 # ── Preflight ──────────────────────────────────────────────────────────────────
-hdr "Itel RS4 kernel build — variant: $VARIANT"
+hdr "$DEVICE_LABEL kernel build — variant: $VARIANT"
 # device.conf gate — the tool refuses to build without a valid per-device KMI target.
 [[ -f "$DEVICE_CONF" ]] || die "device.conf not found ($DEVICE_CONF).
   Create it and set MODULE_LAYOUT to YOUR device's KMI value before building."
@@ -100,10 +142,17 @@ hdr "Itel RS4 kernel build — variant: $VARIANT"
   (all the vendor .ko carry the same CRC — it's the exact ABI the blobs demand)."
 ok "device: KMI target module_layout = $MODULE_LAYOUT (from $(basename "$DEVICE_CONF"))"
 [[ -d "$KERNEL_SRC" ]]      || die "kernel source missing: $KERNEL_SRC"
-[[ -f "$STOCK_CONFIG" ]]    || die "stock config missing: $STOCK_CONFIG (extract-ikconfig from boot.img)"
+[[ -f "$STOCK_CONFIG" ]]    || die "stock config missing: $STOCK_CONFIG
+  Run ./extract-config.sh first — it extracts the base config from your stock boot.img."
 [[ -x "$CLANG_DIR/bin/clang" ]] || die "clang missing: $CLANG_DIR/bin/clang"
 grep -q '^CONFIG_CFI_CLANG=y' "$STOCK_CONFIG" || die "stock config lacks CFI_CLANG — wrong config, KMI would break"
 ok "kernel $(awk '/^VERSION/{v=$3}/^PATCHLEVEL/{p=$3}/^SUBLEVEL/{s=$3}END{print v"."p"."s}' "$KERNEL_SRC/Makefile") @ $(git -C "$KERNEL_SRC" rev-parse --short HEAD 2>/dev/null)   clang $("$CLANG_DIR/bin/clang" --version | awk 'NR==1{print $NF}')"
+# Memory advisory: the full-LTO vmlinux link is the RAM peak here (it near-OOM'd at
+# 14 GB once — the fix was more swap). Warn if RAM+swap looks tight; not a hard stop.
+_memkb="$(awk '/^(MemTotal|SwapTotal):/{s+=$2}END{print s}' /proc/meminfo 2>/dev/null || echo 0)"
+if (( _memkb > 0 && _memkb < 24*1024*1024 )); then
+  warn "RAM+swap ≈ $(( _memkb/1024/1024 )) GB — the LTO link may OOM; add swap or lower parallelism (JOBS=$(( NPROC>4 ? NPROC/2 : NPROC )) ./build.sh …)"
+fi
 mkdir -p "$KOUT" "$(dirname "$LOG")" "$PROJ/out/$VARIANT"
 
 # ── Source prep (KSU/SusFS for the ksunext variant; git-revert on exit) ─────────
@@ -113,14 +162,22 @@ cleanup_source() {
   step "Reverting kernel source to pristine (git checkout + clean)"
   git -C "$KERNEL_SRC" checkout -- . 2>/dev/null || true
   # -ffd (double force) also removes the nested KernelSU-Next git repo setup.sh clones
-  git -C "$KERNEL_SRC" clean -ffdq -e build.config.droidian 2>/dev/null || true
+  git -C "$KERNEL_SRC" clean -ffdq 2>/dev/null || true
   ok "source restored"
 }
 trap cleanup_source EXIT
 
 prepare_source() {
-  [[ -z "$(git -C "$KERNEL_SRC" status --porcelain -uno)" ]] \
-    || die "kernel source has uncommitted tracked changes — refuse to patch on top; inspect $KERNEL_SRC"
+  # The tool ALWAYS builds from pristine + transient patches and reverts on exit, so any
+  # dirt in KERNEL_SRC now is a leftover from a previous/crashed build, not intentional
+  # work — reset it (like the apply scripts reset their own clones) instead of wedging
+  # the next build. Set KEEP_DIRTY=1 to keep changes and abort instead (for local hacking).
+  if [[ -n "$(git -C "$KERNEL_SRC" status --porcelain -uno)" ]]; then
+    [[ "${KEEP_DIRTY:-0}" == 1 ]] && die "kernel source has uncommitted changes and KEEP_DIRTY=1 — inspect $KERNEL_SRC"
+    warn "kernel source was dirty (leftover from a previous/crashed build) — resetting to pristine"
+    git -C "$KERNEL_SRC" checkout -q -- . 2>/dev/null || true
+    git -C "$KERNEL_SRC" clean -ffdq 2>/dev/null || true
+  fi
   SOURCE_DIRTY=1
   # BORE scheduler — applied to EVERY variant (KMI-safe KABI packing; default-on
   # via kernel.sched_bore). Innocent of the recovery bounce — that was built-in ZRAM.
@@ -224,7 +281,10 @@ publish() {
 package() {
   [[ "$PACK" == 1 ]] || return 0
   if [[ -x "$PROJ/package.sh" ]]; then
-    VARIANT="$VARIANT" PROJ="$PROJ" BOOT_IMG="$BOOT_IMG" "$PROJ/package.sh"
+    VARIANT="$VARIANT" PROJ="$PROJ" BOOT_IMG="$BOOT_IMG" \
+      DEVICE_LABEL="$DEVICE_LABEL" DEVICE_SOC="$DEVICE_SOC" DEVICE_NAMES="$DEVICE_NAMES" \
+      KERNEL_FMT="$KERNEL_FMT" MODULE_LAYOUT="$MODULE_LAYOUT" BRAND="$BRAND" \
+      "$PROJ/package.sh"
   else
     warn "package.sh not present yet — skipping AnyKernel3/boot.img (Image artifacts are ready)"
   fi

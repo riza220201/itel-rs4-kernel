@@ -24,12 +24,17 @@
 #   clone so rev-count is correct with NO build-time network + NO version drift.
 set -euo pipefail
 KERNEL_SRC="${KERNEL_SRC:?}"; PROJ="${PROJ:?}"
+# sources.lock is the single source of truth for the pinned commit set.
+LOCKFILE="${LOCKFILE:-$PROJ/sources.lock}"
+# shellcheck source=/dev/null
+[[ -f "$LOCKFILE" ]] && source "$LOCKFILE"          # pins: KOWSU_REF (SHA), KOWSU_VER_EXPECT
 KOWSU_SRC="${KOWSU_SRC:-$PROJ/.build/kowsu-ksu}"   # full local clone of KOWX712/KernelSU
-KOWSU_REF="${KOWSU_REF:-v3.2.5}"                    # tag → version 30000+2525 = 32525
+KOWSU_REF="${KOWSU_REF:-v3.2.5}"                    # pinned SHA (sources.lock); falls back to tag → 32525
 KOWSU_VER_EXPECT="${KOWSU_VER_EXPECT:-32525}"
 say(){ echo "  [kowsu] $*"; }
 die(){ echo "✗ [kowsu] $*" >&2; exit 1; }
 
+[[ -f "$LOCKFILE" ]] || say "⚠ sources.lock not found — falling back to the v3.2.5 tag (not SHA-pinned)"
 [[ -d "$KOWSU_SRC/.git" ]] || die "KoWSU clone missing at $KOWSU_SRC (git clone https://github.com/KOWX712/KernelSU)"
 [[ -d "$KOWSU_SRC/kernel" ]] || die "$KOWSU_SRC/kernel not found — wrong repo?"
 

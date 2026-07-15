@@ -23,9 +23,9 @@ zero force-load, and it boots stock or custom ROMs the same.
 
 | variant | what | `uname -r` |
 |---|---|---|
-| **vanilla** | performance + network + BORE, no root | `5.10.258-Riza-vanilla` |
-| **ksunext** | vanilla + KernelSU-Next + SusFS | `5.10.258-Riza-ksunext` |
-| **kowsu** | vanilla + KoWSU (own hiding, no SusFS) | `5.10.258-Riza-kowsu` |
+| **vanilla** | performance + network + BORE, no root | `5.10.260-Riza-vanilla` |
+| **ksunext** | vanilla + KernelSU-Next + SusFS | `5.10.260-Riza-ksunext` |
+| **kowsu** | vanilla + KoWSU (own hiding, no SusFS) | `5.10.260-Riza-kowsu` |
 
 All three ship as an **AnyKernel3 zip** (flash in OrangeFox — swaps only the
 kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`**
@@ -89,6 +89,8 @@ git clone --recursive https://github.com/riza220201/itel-rs4-kernel
 # already cloned? →  git submodule update --init --depth 1 common
 # bump to the latest LTS tip →  git submodule update --remote --depth 1 common
 ./fetch-toolchain.sh          # pulls clang-r416183b into ./toolchain/
+# drop your device's stock boot.img at ./boot.img, then:
+./extract-config.sh           # extracts the base config from boot.img → .build/ikconfig/
 ./build.sh <vanilla|kowsu|ksunext> [--pack]
 ```
 
@@ -96,29 +98,52 @@ The build reads **`device.conf`** for the one make-or-break per-device value —
 `MODULE_LAYOUT`, the KMI CRC your vendor blobs demand — and **refuses to start**
 until it's a valid CRC (it tells you how to get yours:
 `modprobe --dump-modversions <vendor>.ko | awk '$2=="module_layout"{print $1}'`).
-It ships filled for the Itel RS4 (`0x7c24b32d`); **to port to another device, set
-your `MODULE_LAYOUT` there** (and optionally `VENDOR_KO_DIR` for the full
-cross-check, and `KERNEL_SRC`/`STOCK_CONFIG`/`BOOT_IMG`). The core kernel itself is
-generic GKI — the KMI is reproduced by the config, so any faithful
-`android12-5.10` source works.
+The core kernel itself is generic GKI — the KMI is reproduced by the config, so any
+faithful `android12-5.10` source works.
 
 `--pack` also produces the boot.img + AnyKernel3 zip. A build is one full-LTO link
 (~20-30 min; it's heavy — want swap on a 14 GB box). The kernel source is the
-`common` submodule and the Clang toolchain comes from `./fetch-toolchain.sh`
-(both git-ignored, not in the repo). Device-specific bits are git-ignored too —
-drop your stock `boot.img` in the repo root (for `--pack`), and point at your stock
-`vendor_dlkm` (KMI cross-check) + base config via `device.conf`/env. Paths default
-at the top of `build.sh`. Adding a feature = drop `CONFIG_*` into
-`config/performance.fragment` or `config/network.fragment`; if it breaks the KMI
-gate, back it out (the gate is right).
+`common` submodule; the Clang toolchain comes from `./fetch-toolchain.sh`; the base
+config comes from **your own stock boot.img** via `./extract-config.sh` (all
+git-ignored, nothing device-specific committed). Adding a feature = drop `CONFIG_*`
+into `config/performance.fragment` or `config/network.fragment`; if it breaks the
+KMI gate, back it out (the gate is right).
+
+### Porting to another device
+
+The tool is device-agnostic — everything device-specific lives in **`device.conf`**
+(env vars override it per-run). To retarget:
+
+1. **`MODULE_LAYOUT`** — set it to *your* device's KMI CRC (read it off any stock
+   `vendor_dlkm/*.ko` with the `modprobe --dump-modversions` line above). The build
+   refuses to start without a valid one.
+2. **Stock `boot.img`** — drop it at `./boot.img`, then run `./extract-config.sh` to
+   get your device's base config (it must carry `CFI_CLANG=y` — the script checks).
+3. **`KERNEL_FMT`** — `gzip` / `lz4` / `raw`, matching how your stock boot.img stores
+   the kernel (`magiskboot unpack boot.img` prints it). Wrong value → the repacked
+   boot.img won't boot.
+4. **Device identity** — `DEVICE_LABEL`, `DEVICE_SOC`, `DEVICE_NAMES` (AnyKernel3
+   allowlist), `BRAND`. These drive the branding, installer banner, and release file
+   names; all optional.
+5. **`VENDOR_KO_DIR`** *(recommended)* — drop your stock `vendor_dlkm/*.ko` into
+   `.build/vendor_dlkm/` (the default) for the full 198-module CRC cross-check. Without
+   it the gate checks `module_layout` only and warns.
+
+Everything else (`KERNEL_SRC`, `STOCK_CONFIG`, `BOOT_IMG`, `CLANG_DIR`) has a sane
+default and is overridable in `device.conf` or via env.
 
 Layout: `build.sh` (build + KMI gate), `package.sh` (boot.img + zip),
+`extract-config.sh` (base config from boot.img), `device.conf` (per-device config),
+`sources.lock` (pinned out-of-tree commit set — see below),
 `apply-ksunext-susfs.sh` + `patches/ksunext-static.patch` (KernelSU-Next v3.3.0
 Wild + SusFS), `apply-kowsu.sh` (KoWSU), `apply-bore.sh` +
 `patches/bore-5.10-kmi.patch` (BORE, applied to every variant), `lib/kmi_check.py`
 (the 198-module cross-check), `config/*.fragment`, `anykernel/` (bundled
-AnyKernel3). The `ksunext` sources are pinned in `.build/wildksu` (pershoot
-KernelSU-Next `dev-susfs`) + `.build/susfs-wild` (SusFS v2.2.0 + cherry-picks).
+AnyKernel3). The root-variant sources are **SHA-pinned in `sources.lock`** (the KSU
+side, SusFS, and KoWSU commits) and checked out into `.build/wildksu`,
+`.build/susfs-wild`, `.build/kowsu-ksu`; the build verifies the reported KSU version
+against the lockfile and dies on drift, so a moved upstream branch can't silently
+change what a variant is.
 
 **On BORE + KMI:** BORE needs per-task burst fields on `sched_entity`, which is
 embedded in `task_struct` — adding fields there would change the layout and break

@@ -20,36 +20,61 @@
 # task_struct/inode growth) → module_layout 0x7c24b32d; the build gate re-verifies.
 set -euo pipefail
 KERNEL_SRC="${KERNEL_SRC:?}"; PROJ="${PROJ:?}"
-WILDKSU_SRC="${WILDKSU_SRC:-$PROJ/.build/wildksu}"          # pershoot KernelSU-Next @ dev-susfs
-WILDKSU_REF="${WILDKSU_REF:-dev-susfs}"
+# sources.lock is the single source of truth for the pinned commit set — sourcing it
+# fixes exactly which KSU/SusFS commits this variant is built from (was the moving
+# `dev-susfs`/branch tips). Env vars set before this still win via the ${VAR:-...}.
+LOCKFILE="${LOCKFILE:-$PROJ/sources.lock}"
+# shellcheck source=/dev/null
+[[ -f "$LOCKFILE" ]] && source "$LOCKFILE"
+WILDKSU_SRC="${WILDKSU_SRC:-$PROJ/.build/wildksu}"          # pershoot KernelSU-Next clone
+WILDKSU_REF="${WILDKSU_REF:-dev-susfs}"                     # pinned SHA (sources.lock); falls back to branch tip
+WILDKSU_VERBASE="${WILDKSU_VERBASE:-}"                      # version-anchor commit (sources.lock)
+WILDKSU_VER_EXPECT="${WILDKSU_VER_EXPECT:-}"               # expected 30000+rev-count; drift => die
 SUSFS="${SUSFS:-$PROJ/.build/susfs-wild}"                   # simonpunk 5.10 + pershoot cherry-picks
+SUSFS_REF="${SUSFS_REF:-}"                                  # pinned SHA (sources.lock); empty => use tree as-is
 STATIC_PATCH="${STATIC_PATCH:-$PROJ/patches/ksunext-static.patch}"
 KVER="gki-android12-5.10"
 say(){ echo "  [ksunext] $*"; }
 die(){ echo "✗ [ksunext] $*" >&2; exit 1; }
 
+[[ -f "$LOCKFILE" ]] || say "⚠ sources.lock not found — falling back to branch tips (NOT reproducible)"
 [[ -d "$WILDKSU_SRC/.git" ]] || die "Wild KSU clone missing at $WILDKSU_SRC (git clone https://github.com/pershoot/KernelSU-Next)"
 [[ -d "$WILDKSU_SRC/kernel" ]] || die "$WILDKSU_SRC/kernel not found — wrong repo?"
+# Pin SusFS to the exact commit (sources.lock) before reading its 50_ patch / files.
+if [[ -n "$SUSFS_REF" && -d "$SUSFS/.git" ]]; then
+  git -C "$SUSFS" checkout -q -- . 2>/dev/null || true ; git -C "$SUSFS" clean -fdq 2>/dev/null || true
+  git -C "$SUSFS" checkout -q "$SUSFS_REF" 2>/dev/null \
+    || die "SusFS ref ${SUSFS_REF:0:12} not in $SUSFS — fetch it or fix sources.lock"
+  say "pin SusFS (simonpunk gki-android12-5.10 + picks) @ ${SUSFS_REF:0:12}"
+fi
 PATCH50="$SUSFS/kernel_patches/50_add_susfs_in_${KVER}.patch"
 [[ -f "$PATCH50" ]] || die "susfs-wild 50_ patch missing at $PATCH50 (stage .build/susfs-wild)"
 [[ -f "$STATIC_PATCH" ]] || die "static.patch missing at $STATIC_PATCH"
 
-# 1) Pin Wild KSU @ dev-susfs; reset working tree + (re)apply static.patch fresh so
-# the build is deterministic across reruns. Version is read from committed history
-# (rev-list --count), unaffected by the working-tree static.patch.
-say "pin Wild KSU (pershoot KernelSU-Next) @ $WILDKSU_REF"
-git -C "$WILDKSU_SRC" checkout -q "$WILDKSU_REF" 2>/dev/null || git -C "$WILDKSU_SRC" checkout -q "origin/$WILDKSU_REF" 2>/dev/null \
-  || die "ref $WILDKSU_REF not in clone"
-git -C "$WILDKSU_SRC" checkout -q -- . ; git -C "$WILDKSU_SRC" clean -fdq
+# 1) Pin Wild KSU to the exact commit (sources.lock). Reset the working tree FIRST so
+# a leftover static.patch from a prior/crashed run can't block the checkout, then
+# re-apply it fresh below → deterministic across reruns. Version is read from
+# committed history (rev-list --count), unaffected by the working-tree static.patch.
 if git -C "$WILDKSU_SRC" rev-parse --is-shallow-repository 2>/dev/null | grep -q true; then
   die "Wild KSU clone is shallow — version rev-count would be wrong; re-clone full"
 fi
-# Version math mirrors the dev-susfs Kbuild: 30000 + rev-count of the merge-base
-# with the base branch (dev-susfs → dev), which == the KSU-Next v3.3.0 dev HEAD →
-# reports 33219, matching the stock KernelSU-Next v3.3.0 manager.
-KVBASE=$(git -C "$WILDKSU_SRC" rev-parse --abbrev-ref HEAD | sed 's:-.*::')
-KVCOMMIT=$(git -C "$WILDKSU_SRC" merge-base HEAD "refs/remotes/origin/$KVBASE" 2>/dev/null || echo HEAD)
+say "pin Wild KSU (pershoot KernelSU-Next) @ ${WILDKSU_REF:0:12}"
+git -C "$WILDKSU_SRC" checkout -q -- . 2>/dev/null || true ; git -C "$WILDKSU_SRC" clean -fdq
+git -C "$WILDKSU_SRC" checkout -q "$WILDKSU_REF" 2>/dev/null || git -C "$WILDKSU_SRC" checkout -q "origin/$WILDKSU_REF" 2>/dev/null \
+  || die "ref $WILDKSU_REF not in clone — fetch it or fix sources.lock"
+# Version = 30000 + rev-count(version-anchor). Pinning to a SHA detaches HEAD, so the
+# old branch-name derivation (dev-susfs → dev → merge-base) no longer applies — use
+# the pinned WILDKSU_VERBASE (merge-base w/ dev = KSU-Next v3.3.0 HEAD → 33219). Fall
+# back to the live branch derivation only if the lockfile pinned no anchor.
+if [[ -n "$WILDKSU_VERBASE" ]]; then
+  KVCOMMIT="$WILDKSU_VERBASE"
+else
+  KVBASE=$(git -C "$WILDKSU_SRC" rev-parse --abbrev-ref HEAD | sed 's:-.*::')
+  KVCOMMIT=$(git -C "$WILDKSU_SRC" merge-base HEAD "refs/remotes/origin/$KVBASE" 2>/dev/null || echo HEAD)
+fi
 KVERNUM=$(( 30000 + $(git -C "$WILDKSU_SRC" rev-list --count "$KVCOMMIT") ))
+[[ -z "$WILDKSU_VER_EXPECT" || "$KVERNUM" == "$WILDKSU_VER_EXPECT" ]] \
+  || die "KSU version drift: computed $KVERNUM but sources.lock expects $WILDKSU_VER_EXPECT — WILDKSU_REF/VERBASE moved; reconcile sources.lock (and package.sh banner) before shipping"
 say "Wild KSU-Next reported version = $KVERNUM (manager must be >= this; v3.3.0 manager matches)"
 say "apply WildKernels static.patch (de-static selinux_hide fns)"
 ( cd "$WILDKSU_SRC" && patch -p1 --no-backup-if-mismatch --forward < "$STATIC_PATCH" ) \
