@@ -12,6 +12,7 @@ LOCKFILE="${LOCKFILE:-$PROJ/sources.lock}"
 # shellcheck source=/dev/null
 [[ -f "$LOCKFILE" ]] && source "$LOCKFILE"
 KSUNVER="${WILDKSU_VER_EXPECT:-33219}"
+KOWSUVER="${KOWSU_VER_EXPECT:-32579}"
 
 # ── Device identity: env (from build.sh) wins; else device.conf; else defaults ──
 # Sourcing device.conf is only for standalone `VARIANT=x ./package.sh` runs (build.sh
@@ -60,7 +61,7 @@ case "$VARIANT" in
   vanilla) LABEL="Vanilla"
            ROOTLINE='ui_print "   [+] root    : none (vanilla)"' ;;
   kowsu)   LABEL="KoWSU"
-           ROOTLINE='ui_print "   [+] root    : KoWSU v3.2.5 (manager v3.2.5+)"' ;;
+           ROOTLINE="ui_print \"   [+] root    : KoWSU $KOWSUVER (install the MATCHING KOWX712 manager)\"" ;;
   ksunext) LABEL="KernelSU-Next+SusFS"
            ROOTLINE="ui_print \"   [+] root    : KernelSU-Next v3.3.0 ($KSUNVER) + SusFS v2.2.0 (v3.3.0 manager)\"" ;;
   *)       die "unknown VARIANT=$VARIANT (vanilla|kowsu|ksunext)" ;;

@@ -28,7 +28,11 @@ WILDKSU_VER_EXPECT="33219"                                   # 30000 + rev-count
 SUSFS_REF="f03c1cbc49a8a4eecfb00481b38929cfef79ee4d"         # simonpunk gki-android12-5.10 + 2 pershoot cherry-picks
 
 # ── kowsu variant: KOWX712/KernelSU standalone (own hiding, no SusFS) ────────────
-# Pinned by SHA (stronger than the v3.2.5 tag — a tag can be re-pointed). Version is
-# 30000 + rev-count; apply-kowsu.sh verifies it == KOWSU_VER_EXPECT.
-KOWSU_REF="b0bc817b4e966aa6aa830834eaf6ef765d821d40"         # KOWX712/KernelSU tag v3.2.5 @ this commit
-KOWSU_VER_EXPECT="32525"                                     # 30000 + rev-count(KOWSU_REF)
+# Pin to a CURRENT KOWX712 master commit so the kernel version matches the manager
+# users actually download. The old "pin low (v3.2.5=32525) so any newer manager works"
+# theory was WRONG: the current manager (32579) will NOT bind a stale 32525 driver →
+# users got "Not installed" (reported on v2). This commit == the manager build
+# `v3.2.5-54-gcfac3be3` (32579) — kernel + manager from the SAME source commit.
+# RE-BUMP when KOWX712 moves master and the distributed manager moves with it.
+KOWSU_REF="cfac3be332ae8fe71d3d541b323ffeb742aed295"         # KOWX712/KernelSU master @ v3.2.5-54-gcfac3be3
+KOWSU_VER_EXPECT="32579"                                     # 30000 + rev-count(KOWSU_REF); manager must match this

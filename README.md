@@ -76,9 +76,12 @@ kernel, so a bad flash is boot-only and easy to recover.
 releases). The kernel reports version **33219**; the manager must be at least that
 or `su` is denied.
 
-**kowsu build:** install the KoWSU manager **v3.2.5 or newer** (from
-[KOWX712/KernelSU](https://github.com/KOWX712/KernelSU) releases). The kernel
-reports version 32525; the manager just has to be at least that.
+**kowsu build:** the kernel reports KoWSU version **32579** and pairs with the
+**matching** [KOWX712/KernelSU](https://github.com/KOWX712/KernelSU) manager
+(`v3.2.5-54-gcfac3be3`, i.e. the current build). Install *that* manager — a
+mismatched/older one shows "Not installed" (KernelSU only binds a manager it pairs
+with, not merely "≥"). This tracks KOWX712's fast-moving `master`; if a newer manager
+stops binding, the kernel needs re-bumping to match (open an issue).
 
 ## Building it yourself
 
@@ -117,8 +120,22 @@ The tool is device-agnostic — everything device-specific lives in **`device.co
 1. **`MODULE_LAYOUT`** — set it to *your* device's KMI CRC (read it off any stock
    `vendor_dlkm/*.ko` with the `modprobe --dump-modversions` line above). The build
    refuses to start without a valid one.
-2. **Stock `boot.img`** — drop it at `./boot.img`, then run `./extract-config.sh` to
-   get your device's base config (it must carry `CFI_CLANG=y` — the script checks).
+2. **Stock kernel config** — the build composes on top of *your device's own stock
+   kernel `.config`* (that's what carries the CFI + LTO + MODVERSIONS flags that
+   reproduce your KMI). You don't hand-write it — you extract it:
+   - **Get your stock `boot.img`.** Pull it from your device's stock firmware /
+     factory package / OTA (or dump the `boot` partition on the device). Drop it at
+     **`./boot.img`** (or point `BOOT_IMG=` at it).
+   - **Run `./extract-config.sh`.** It runs `extract-ikconfig` on that boot.img and
+     writes the config to **`.build/ikconfig/stock.config`** — which is exactly the
+     default `STOCK_CONFIG` the build reads. So once it succeeds, you're done; no
+     assignment needed. It aborts if the config lacks `CFI_CLANG=y` (wrong image).
+   - **Where it's assigned:** `STOCK_CONFIG` defaults to `.build/ikconfig/stock.config`.
+     If you keep your config somewhere else, set `STOCK_CONFIG="/path/to/your.config"`
+     in `device.conf`.
+   - *No boot.img?* If your device is already running and its kernel has
+     `CONFIG_IKCONFIG_PROC`, `zcat /proc/config.gz` on the device gives the same config
+     — save it as `.build/ikconfig/stock.config` (or point `STOCK_CONFIG` at it).
 3. **`KERNEL_FMT`** — `gzip` / `lz4` / `raw`, matching how your stock boot.img stores
    the kernel (`magiskboot unpack boot.img` prints it). Wrong value → the repacked
    boot.img won't boot.
