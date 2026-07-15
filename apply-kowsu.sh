@@ -16,12 +16,14 @@
 #   so it cannot change task_struct / any vendor-referenced struct → module_layout
 #   stays 0x7c24b32d. The build's KMI gate re-verifies regardless.
 #
-# VERSION MATCHING (the make-or-break for root, learned the hard way in v1):
-#   KoWSU reports version = 30000 + git-rev-count. Pinned tag v3.2.5 → 32525, which
-#   is deliberately aligned with the official-KSU numbering. The KoWSU manager must
-#   be >= the kernel version, so pinning the kernel LOW (32525) means ANY current
-#   KOWX712 manager APK (v3.2.5 or newer) grants root. Full (non-shallow) local
-#   clone so rev-count is correct with NO build-time network + NO version drift.
+# VERSION MATCHING (the make-or-break for root):
+#   KoWSU reports version = 30000 + git-rev-count. The manager only binds a kernel
+#   whose version it PAIRS with — the old "pin low so any newer manager works" theory
+#   was wrong (a current 32579 manager will NOT bind a stale 32525 driver → users hit
+#   "Not installed", reported on v2). So pin to a CURRENT KOWX712 master commit matching
+#   the distributed manager (v3.2.5-54-gcfac3be3 → 32579; kernel + manager from the same
+#   commit). Full (non-shallow) local clone → deterministic rev-count, no build-time net.
+#   Re-bump KOWSU_REF/KOWSU_VER_EXPECT in sources.lock when KOWX712 + its manager move.
 set -euo pipefail
 KERNEL_SRC="${KERNEL_SRC:?}"; PROJ="${PROJ:?}"
 # sources.lock is the single source of truth for the pinned commit set.
@@ -29,8 +31,8 @@ LOCKFILE="${LOCKFILE:-$PROJ/sources.lock}"
 # shellcheck source=/dev/null
 [[ -f "$LOCKFILE" ]] && source "$LOCKFILE"          # pins: KOWSU_REF (SHA), KOWSU_VER_EXPECT
 KOWSU_SRC="${KOWSU_SRC:-$PROJ/.build/kowsu-ksu}"   # full local clone of KOWX712/KernelSU
-KOWSU_REF="${KOWSU_REF:-v3.2.5}"                    # pinned SHA (sources.lock); falls back to tag → 32525
-KOWSU_VER_EXPECT="${KOWSU_VER_EXPECT:-32525}"
+KOWSU_REF="${KOWSU_REF:-cfac3be332ae8fe71d3d541b323ffeb742aed295}"  # current KOWX712 master (sources.lock)
+KOWSU_VER_EXPECT="${KOWSU_VER_EXPECT:-32579}"
 say(){ echo "  [kowsu] $*"; }
 die(){ echo "✗ [kowsu] $*" >&2; exit 1; }
 
