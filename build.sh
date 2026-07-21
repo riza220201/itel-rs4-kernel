@@ -5,7 +5,7 @@
 #   ./build.sh <variant>            build + KMI-gate + publish Image{,.gz,.lz4}
 #   ./build.sh <variant> --pack     also build AnyKernel3 zip + stock boot.img
 #
-#   variant = vanilla | kowsu | ksunext   (all carry BORE + perf + network)
+#   variant = vanilla | kowsu | ksunext   (all carry BORE + ntsync + perf + network)
 #     vanilla  : stock config + performance + network + BORE (no root)
 #     kowsu    : vanilla + KoWSU (KOWX712/KernelSU) standalone, own hiding, no SusFS
 #     ksunext  : vanilla + KernelSU-Next v3.3.0 "Wild" dev-susfs + SusFS v2.2.0
@@ -185,6 +185,12 @@ prepare_source() {
   [[ -x "$PROJ/apply-bore.sh" ]] || die "apply-bore.sh missing — BORE not staged yet"
   KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-bore.sh"
   ok "BORE applied"
+  # ntsync — applied to EVERY variant (KMI-safe self-contained leaf misc driver;
+  # /dev/ntsync for Wine/Winlator NT-sync emulation). No runtime risk, no KABI work.
+  step "Applying ntsync backport (apply-ntsync.sh)"
+  [[ -x "$PROJ/apply-ntsync.sh" ]] || die "apply-ntsync.sh missing — ntsync not staged yet"
+  KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ntsync.sh"
+  ok "ntsync applied"
   case "$VARIANT" in
     kowsu)
       step "Integrating KoWSU (KOWX712) standalone (apply-kowsu.sh)"
@@ -210,7 +216,7 @@ compose_config() {
   "$KERNEL_SRC/scripts/config" --file "$KOUT/.config" \
     --disable TRIM_UNUSED_KSYMS --set-str UNUSED_KSYMS_WHITELIST ""
   local frags=( "$PROJ/config/performance.fragment" "$PROJ/config/network.fragment"
-                "$PROJ/config/bore.fragment" )
+                "$PROJ/config/bore.fragment" "$PROJ/config/ntsync.fragment" )
   [[ "$VARIANT" == "kowsu" ]]   && frags+=( "$PROJ/config/kowsu.fragment" )
   [[ "$VARIANT" == "ksunext" ]] && frags+=( "$PROJ/config/ksunext.fragment" )
   for f in "${frags[@]}"; do [[ -f "$f" ]] || die "fragment missing: $f"; done
