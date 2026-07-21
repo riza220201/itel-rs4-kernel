@@ -35,6 +35,13 @@ kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`*
 - sched — **BORE** (Burst-Oriented Response Enhancer) for snappier foreground
   under load; on by default, flip it off live with `sysctl kernel.sched_bore=0`
   (no reflash). Experimental on this MTK EAS SoC.
+- compat — **ntsync** (`/dev/ntsync`): mainline's NT synchronization driver
+  (semaphores + mutexes + events + wait-all/wait-any) backported to 5.10, for
+  **Wine / Winlator** — it backs Windows sync objects with in-kernel objects
+  instead of the eventfd esync/fsync, cutting sync overhead for Windows games
+  under emulation. A self-contained leaf misc driver (KMI-inert). Note: exposing
+  the node to apps needs a **ROM sepolicy** rule for `/dev/ntsync`, and a Winlator
+  build that uses the ntsync backend — the kernel just provides the node.
 - net — TCP BBR (default) + fq / fq_codel / CAKE + WireGuard + TTL/HL targets
   (normalize TTL for tethering)
 - storage — BFQ + Kyber I/O schedulers, all CPU governors
@@ -154,7 +161,8 @@ Layout: `build.sh` (build + KMI gate), `package.sh` (boot.img + zip),
 `sources.lock` (pinned out-of-tree commit set — see below),
 `apply-ksunext-susfs.sh` + `patches/ksunext-static.patch` (KernelSU-Next v3.3.0
 Wild + SusFS), `apply-kowsu.sh` (KoWSU), `apply-bore.sh` +
-`patches/bore-5.10-kmi.patch` (BORE, applied to every variant), `lib/kmi_check.py`
+`patches/bore-5.10-kmi.patch` (BORE, applied to every variant), `apply-ntsync.sh` +
+`patches/ntsync-5.10.patch` (ntsync, applied to every variant), `lib/kmi_check.py`
 (the 198-module cross-check), `config/*.fragment`, `anykernel/` (bundled
 AnyKernel3). The root-variant sources are **SHA-pinned in `sources.lock`** (the KSU
 side, SusFS, and KoWSU commits) and checked out into `.build/wildksu`,
@@ -179,5 +187,6 @@ Standing on other people's work:
   **WildKernels** — the current KSU-Next + SusFS integration recipe
 - **simonpunk** — SusFS · **tiann** — original KernelSU · **osm0sis** — AnyKernel3
 - **KOWX712** — KoWSU · **firelzrd** — BORE scheduler
+- **Elizabeth Figura / CodeWeavers** — the ntsync driver (mainline)
 
 Bug reports welcome — bring logs.

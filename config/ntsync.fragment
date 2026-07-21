@@ -1,0 +1,13 @@
+# ── ntsync (NT synchronization primitives) — all variants ───────────────────────
+# Mainline drivers/misc/ntsync.c (v6.14, complete: semaphores + mutexes + events +
+# wait-all/wait-any) backported to android12-5.10 via patches/ntsync-5.10.patch. It
+# exposes /dev/ntsync, which Wine (Winlator/Proton) uses to back Windows NT
+# semaphores/mutexes/events with in-kernel objects instead of eventfd esync/fsync —
+# cutting sync-syscall overhead for Windows games under emulation.
+#
+# KMI-safe by construction: a self-contained leaf misc driver that exports no
+# symbols and touches no core struct → cannot move module_layout (gate re-verifies).
+# Built in (=y): a leaf driver with no runtime risk; the /dev/ntsync SELinux label +
+# an untrusted_app allow rule are a ROM-side sepolicy change (the kernel only
+# provides the node). Winlator must use its ntsync backend for this to do anything.
+CONFIG_NTSYNC=y
