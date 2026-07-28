@@ -1,0 +1,7 @@
+# Reflex CPUFreq governor (firelzrd/reflex v0.3.1, backported to android12-5.10).
+# Built-in (=y) so it is registered at kernel init and is selectable at boot by
+# the itel device tree, which writes "reflex" to policy0/policy6 scaling_governor.
+# KMI-inert: the governor + its schedutil helpers are pure additions, so
+# module_layout and all 198 vendor_dlkm CRCs are unchanged (the gate re-verifies).
+# depends CPU_FREQ_GOV_SCHEDUTIL is already satisfied by the stock base config.
+CONFIG_CPU_FREQ_GOV_REFLEX=y

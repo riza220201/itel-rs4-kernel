@@ -191,6 +191,13 @@ prepare_source() {
   [[ -x "$PROJ/apply-ntsync.sh" ]] || die "apply-ntsync.sh missing — ntsync not staged yet"
   KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ntsync.sh"
   ok "ntsync applied"
+  # reflex CPUFreq governor — applied to EVERY variant (KMI-safe pure additions;
+  # firelzrd/reflex backported to 5.10). The itel S666LN device tree selects
+  # "reflex" as the scaling_governor (policy0 + policy6). See apply-reflex.sh.
+  step "Applying Reflex CPUFreq governor (apply-reflex.sh)"
+  [[ -x "$PROJ/apply-reflex.sh" ]] || die "apply-reflex.sh missing — reflex not staged yet"
+  KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-reflex.sh"
+  ok "reflex applied"
   case "$VARIANT" in
     kowsu)
       step "Integrating KoWSU (KOWX712) standalone (apply-kowsu.sh)"
@@ -216,7 +223,8 @@ compose_config() {
   "$KERNEL_SRC/scripts/config" --file "$KOUT/.config" \
     --disable TRIM_UNUSED_KSYMS --set-str UNUSED_KSYMS_WHITELIST ""
   local frags=( "$PROJ/config/performance.fragment" "$PROJ/config/network.fragment"
-                "$PROJ/config/bore.fragment" "$PROJ/config/ntsync.fragment" )
+                "$PROJ/config/bore.fragment" "$PROJ/config/ntsync.fragment"
+                "$PROJ/config/reflex.fragment" )
   [[ "$VARIANT" == "kowsu" ]]   && frags+=( "$PROJ/config/kowsu.fragment" )
   [[ "$VARIANT" == "ksunext" ]] && frags+=( "$PROJ/config/ksunext.fragment" )
   for f in "${frags[@]}"; do [[ -f "$f" ]] || die "fragment missing: $f"; done
