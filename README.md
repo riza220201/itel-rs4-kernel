@@ -23,7 +23,7 @@ zero force-load, and it boots stock or custom ROMs the same.
 
 | variant | what | `uname -r` |
 |---|---|---|
-| **vanilla** | performance + network + BORE, no root | `5.10.260-Riza-vanilla` |
+| **vanilla** | performance + network + BORE + reflex + ntsync, no root | `5.10.260-Riza-vanilla` |
 | **ksunext** | vanilla + KernelSU-Next + SusFS | `5.10.260-Riza-ksunext` |
 | **kowsu** | vanilla + KoWSU (own hiding, no SusFS) | `5.10.260-Riza-kowsu` |
 
@@ -35,6 +35,13 @@ kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`*
 - sched — **BORE** (Burst-Oriented Response Enhancer) for snappier foreground
   under load; on by default, flip it off live with `sysctl kernel.sched_bore=0`
   (no reflash). Experimental on this MTK EAS SoC.
+- cpufreq — **reflex** (firelzrd v0.3.1), an *interactive + schedutil hybrid*
+  backported from 6.x: an idle-time (kcpustat) derived **hispeed floor** blended
+  into schedutil's PELT scaling with a PELT-complementary 32 ms decay — schedutil's
+  steady state, but a much faster jump to high clock when a burst of work lands.
+  This device's tree selects `reflex` for **policy0** (little) and **policy6**
+  (big); stock MediaTek kernels ship it but clean GKI does not, so that write
+  **silently no-op'd** and the CPU fell back to schedutil. From v5 it takes effect.
 - compat — **ntsync** (`/dev/ntsync`): mainline's NT synchronization driver
   (semaphores + mutexes + events + wait-all/wait-any) backported to 5.10, for
   **Wine / Winlator** — it backs Windows sync objects with in-kernel objects
@@ -162,7 +169,8 @@ Layout: `build.sh` (build + KMI gate), `package.sh` (boot.img + zip),
 `apply-ksunext-susfs.sh` + `patches/ksunext-static.patch` (KernelSU-Next v3.3.0
 Wild + SusFS), `apply-kowsu.sh` (KoWSU), `apply-bore.sh` +
 `patches/bore-5.10-kmi.patch` (BORE, applied to every variant), `apply-ntsync.sh` +
-`patches/ntsync-5.10.patch` (ntsync, applied to every variant), `lib/kmi_check.py`
+`patches/ntsync-5.10.patch` (ntsync, applied to every variant), `apply-reflex.sh` +
+`patches/cpufreq_reflex.c` (reflex governor, applied to every variant), `lib/kmi_check.py`
 (the 198-module cross-check), `config/*.fragment`, `anykernel/` (bundled
 AnyKernel3). The root-variant sources are **SHA-pinned in `sources.lock`** (the KSU
 side, SusFS, and KoWSU commits) and checked out into `.build/wildksu`,
@@ -177,6 +185,18 @@ the vendor ABI. Instead the burst state is packed into `sched_entity`'s
 sees as the original reserved `u64` — so `module_layout` and every vendor CRC come
 out byte-identical. The gate confirms it (198/198) on every build.
 
+**On reflex + KMI:** reflex needs no such trick — every change is a *pure addition*: a
+new self-contained `drivers/cpufreq/cpufreq_reflex.c`, five new `EXPORT_SYMBOL_GPL`
+helper wrappers appended to `schedutil.c`, their declarations in
+`include/linux/sched/cpufreq.h`, and a Kconfig + Makefile entry. Nothing changes struct
+layout and no existing symbol changes signature, so genksyms emits a byte-identical
+`module_layout` and identical vendor CRCs. Three `EXPORT_SYMBOL`s the upstream patch
+adds to `kthread.c` / `tick-sched.c` / `sched/cpufreq.c` already exist on 5.10, and its
+x86 `aperfmperf` hunk is irrelevant on arm64 — both dropped. On 5.10 the effective
+utilisation comes from the exported `schedutil_cpu_util()`, so reflex's PELT path is
+byte-identical to schedutil here; `sched_ext` and `uclamp_rq_is_capped()` don't exist on
+5.10, and their absence only skips an update optimisation.
+
 ## Credits
 
 Standing on other people's work:
@@ -186,7 +206,7 @@ Standing on other people's work:
 - **KernelSU-Next** — KernelSU-Next · **pershoot** — Wild KSU (`dev-susfs`) ·
   **WildKernels** — the current KSU-Next + SusFS integration recipe
 - **simonpunk** — SusFS · **tiann** — original KernelSU · **osm0sis** — AnyKernel3
-- **KOWX712** — KoWSU · **firelzrd** — BORE scheduler
+- **KOWX712** — KoWSU · **firelzrd** — BORE scheduler + reflex CPUFreq governor
 - **Elizabeth Figura / CodeWeavers** — the ntsync driver (mainline)
 
 Bug reports welcome — bring logs.
