@@ -98,6 +98,31 @@ else
   skip "no referenced non-module_layout symbol found to tamper"
 fi
 
+echo "[negative D] a reference set that is not the expected revision must be REJECTED"
+# 🔴 The gate's REFERENCE SET is an input, and on 2026-09-03 it was found stale:
+# it still held the module set replaced on 2026-09-02, so `ok=198 bad=0` was
+# measured against modules nobody ships. Both sets passed, so no build was
+# misjudged — but a gate wired to a stale input cannot fail.
+# Provoked here by changing the EXPECTATION rather than by keeping a wrong set
+# on disk: the code path is identical, and the test then needs no bad artefact.
+if [[ -n "${KMI_EXPECT_VERMAGIC:-}" ]]; then
+  KMI_EXPECT_VERMAGIC="5.10.0-not-this-revision" "${GATE[@]}" "$SYMVERS" "$VKDIR" >/dev/null 2>&1
+  [[ $? -eq 3 ]] \
+    && ok "wrong-revision reference set → gate exit 3 (rejected)" \
+    || bad "gate ACCEPTED a reference set of the wrong revision (stale-input bug is back!)"
+  # and the declared-exception hole must still work, or nobody can ship a module they build
+  KMI_EXPECT_VERMAGIC="5.10.0-not-this-revision" \
+  KMI_VERMAGIC_EXCEPTIONS="$(cd "$VKDIR" && ls *.ko | tr '\n' ' ')" \
+    "${GATE[@]}" "$SYMVERS" "$VKDIR" >/dev/null 2>&1 \
+    && ok "declared exceptions still excuse a module (the hole is open on purpose)" \
+    || bad "exception list did not excuse anything — self-built modules cannot ship"
+  "${GATE[@]}" "$SYMVERS" "$VKDIR" 2>/dev/null | grep -q '^provenance *: ok' \
+    && ok "positive: the real reference set satisfies KMI_EXPECT_VERMAGIC" \
+    || bad "the real reference set FAILS its own declared vermagic — check device.conf"
+else
+  skip "KMI_EXPECT_VERMAGIC unset in device.conf — provenance checks skipped"
+fi
+
 echo "[negative C] empty symvers must be REJECTED (false-pass guard)"
 : > "$W/empty.symvers"
 "${GATE[@]}" "$W/empty.symvers" "$VKDIR" >/dev/null 2>&1 \
