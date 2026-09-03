@@ -57,13 +57,27 @@ if [[ -z "$KREL" ]]; then
   KREL="$(awk '/^VERSION/{v=$3}/^PATCHLEVEL/{p=$3}/^SUBLEVEL/{s=$3}END{print v"."p"."s}' "${KERNEL_SRC:-$PROJ/common}/Makefile" 2>/dev/null || echo unknown)"
 fi
 DATE="$(date +%Y%m%d)"
+
+# SusFS version: READ, never hardcoded. This banner said "v2.2.0" while the pin
+# had already moved to v2.3.0 — and unlike a stale comment, this one is printed
+# to the USER in the flasher, so the zip would announce a version it does not
+# install. Same rule as KREL above: derive it from what is actually shipping.
+# Source of truth is the susfs tree the build integrated; the built Image is the
+# cross-check.
+# `|| true` matters: this file runs under `set -e`, and a grep that matches
+# nothing exits 1, which killed package.sh outright with NO output at all.
+SUSFS_VER="$(sed -n 's/.*#define SUSFS_VERSION[[:space:]]*"\(v[0-9.]*\)".*/\1/p' \
+              "$PROJ/.build/susfs-wild/kernel_patches/include/linux/susfs.h" 2>/dev/null \
+             | head -1 || true)"
+[[ -n "$SUSFS_VER" ]] || SUSFS_VER="unknown"
+
 case "$VARIANT" in
   vanilla) LABEL="Vanilla"
            ROOTLINE='ui_print "   [+] root    : none (vanilla)"' ;;
   kowsu)   LABEL="KoWSU"
            ROOTLINE="ui_print \"   [+] root    : KoWSU $KOWSUVER (install the MATCHING KOWX712 manager)\"" ;;
   ksunext) LABEL="KernelSU-Next+SusFS"
-           ROOTLINE="ui_print \"   [+] root    : KernelSU-Next v3.3.0 ($KSUNVER) + SusFS v2.2.0 (v3.3.0 manager)\"" ;;
+           ROOTLINE="ui_print \"   [+] root    : KernelSU-Next v3.3.0 ($KSUNVER) + SusFS $SUSFS_VER (v3.3.0 manager)\"" ;;
   *)       die "unknown VARIANT=$VARIANT (vanilla|kowsu|ksunext)" ;;
 esac
 KSTRING="$DEVICE_LABEL $LABEL Kernel • $KREL • $DATE"
@@ -149,9 +163,16 @@ $ROOTLINE;
 ui_print "   ────────────────────────────────────────────";
 ui_print " ";
 
-# 5.10 sanity guard
+# 5.10 sanity guard.
+# \$kver is the kernel the ROM is running RIGHT NOW — the one being replaced —
+# not the one in this zip. Say so, because the old wording printed a bare
+# "kernel base 5.10.260 OK" directly under a banner announcing 5.10.268, which
+# reads like the installer has the wrong version.
 kver=\$(cat /proc/version | awk '{print \$3}' | cut -d- -f1)
-case "\$kver" in 5.10.*) ui_print " -> kernel base \$kver OK" ;; *) abort " -> not a 5.10 ROM (\$kver) — wrong device?" ;; esac
+case "\$kver" in
+  5.10.*) ui_print " -> ROM is on \$kver (5.10 base OK) — installing $KREL" ;;
+  *)      abort " -> not a 5.10 ROM (\$kver) — wrong device?" ;;
+esac
 
 # boot install (proven GrayRavens logic for this device)
 if [ -L "/dev/block/bootdevice/by-name/init_boot_a" ] || [ -L "/dev/block/by-name/init_boot_a" ]; then
