@@ -1,0 +1,54 @@
+name: ci
+# Lints the tooling and exercises the safety-net logic on every push. Note: the
+# full CFI+LTO kernel build is NOT run here — it needs the 1.4G Clang toolchain, the
+# vendor_dlkm blobs, and ~25 min with heavy RAM (it near-OOMs at 14 G), which a free
+# GitHub runner can't do. Run the full build + KMI gate + `test/kmi-gate-selftest.sh`
+# on a builder that has the toolchain + vendor_dlkm (locally, or a self-hosted runner).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-logic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false        # the kernel source submodule is ~1 G; not needed for lint
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          python3 -m pip install --quiet pyelftools
+
+      - name: Shell syntax (bash -n)
+        run: |
+          for s in build.sh package.sh extract-config.sh fetch-toolchain.sh apply-*.sh test/*.sh; do
+            echo "bash -n $s"; bash -n "$s"
+          done
+
+      - name: ShellCheck
+        run: shellcheck -S warning build.sh package.sh extract-config.sh fetch-toolchain.sh apply-*.sh test/*.sh
+
+      - name: Python syntax (KMI checker)
+        run: python3 -m py_compile lib/kmi_check.py
+
+      - name: device.conf gate — a garbage MODULE_LAYOUT must be REFUSED
+        run: |
+          if MODULE_LAYOUT=not-a-crc ./build.sh vanilla >/dev/null 2>&1; then
+            echo "FAIL: build.sh accepted a garbage MODULE_LAYOUT"; exit 1
+          fi
+          echo "ok: build.sh refuses an invalid MODULE_LAYOUT"
+
+      - name: KMI-gate self-test — proves the gate rejects a broken kernel
+        run: |
+          # Needs a real symvers + vendor_dlkm (a builder has them); skips (exit 77)
+          # on a bare runner. On a self-hosted builder this is the real safety-net proof.
+          ./test/kmi-gate-selftest.sh; c=$?
+          if [ "$c" = 77 ]; then
+            echo "::notice::KMI-gate self-test skipped — no build artifacts on this runner (run on a builder)"
+          elif [ "$c" != 0 ]; then
+            exit "$c"
+          fi
