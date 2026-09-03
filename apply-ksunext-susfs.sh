@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Integrate KernelSU-Next (v3.3.0 "Wild" dev-susfs) + SusFS v2.2.0 into $KERNEL_SRC
+# Integrate KernelSU-Next (v3.3.0 "Wild" dev-susfs) + SusFS (version read from source) into $KERNEL_SRC
 # (called by build.sh for the ksunext variant, on a pristine git tree that is
 # git-reverted afterwards). This is the current root variant — it replaced the old
 # official-KernelSU `ksu` variant, and supersedes the earlier v3.1.0-legacy-susfs +
@@ -10,7 +10,7 @@
 #     v3.3.0 (restructured core/feature/hook/supercall) with SusFS *in-driver*, so
 #     NO `10_` patch. + WildKernels `static.patch` (de-statics 3 selinux_hide fns so
 #     the SusFS selinux hooks link).
-#   * Kernel side: stock simonpunk SusFS v2.2.0 (gki-android12-5.10) + pershoot's 2
+#   * Kernel side: stock simonpunk SusFS (gki-android12-5.10, version read from source) + pershoot's 2
 #     extension cherry-picks (staged in .build/susfs-wild) — the matched susfs.c the
 #     dev-susfs driver calls. 50_ applies 0-fail on this 5.10.258 tree; the
 #     WildKernels "fake patch" source-context hacks all gate on sublevel <=117/<=209,
@@ -90,9 +90,17 @@ grep -q 'drivers/kernelsu/Kconfig' "$DKC" \
 [[ -e "$KERNEL_SRC/drivers/kernelsu/Kconfig" ]] \
   || die "drivers/kernelsu/Kconfig unresolved — symlink broken"
 
-# 3) SusFS v2.2.0(+pershoot) kernel-side: copy fs/ + headers, then apply the 50_.
+# 3) SusFS (+pershoot) kernel-side: copy fs/ + headers, then apply the 50_.
 # sublevel 258 > all WildKernels fake-patch gates (<=117/<=209) → no context hacks.
-say "copy susfs.c + include headers (v2.2.0 + pershoot cherry-picks @ susfs-wild)"
+# SusFS version is READ from the source, never hardcoded. It was pinned at
+# "v2.2.0" in five places here while the pin had moved to v2.3.0 — the log and
+# the banner would then have advertised a version the kernel does not contain,
+# which is how a release note ends up lying about its own artifact.
+# `|| true`: this runs under `set -e` and a non-matching grep exits 1.
+SUSFS_VER=$(sed -n 's/.*#define SUSFS_VERSION[[:space:]]*"\(v[0-9.]*\)".*/\1/p' \
+            "$SUSFS_SRC/kernel_patches/include/linux/susfs.h" 2>/dev/null | head -1 || true)
+[[ -n "$SUSFS_VER" ]] || SUSFS_VER="unknown"
+say "copy susfs.c + include headers ($SUSFS_VER + pershoot cherry-picks @ susfs-wild)"
 cp "$SUSFS/kernel_patches/fs/"*                "$KERNEL_SRC/fs/"
 cp "$SUSFS/kernel_patches/include/linux/"*     "$KERNEL_SRC/include/linux/"
 say "apply $(basename "$PATCH50") at kernel root"
@@ -100,4 +108,4 @@ say "apply $(basename "$PATCH50") at kernel root"
   || die "50_ patch failed — inspect .rej in $KERNEL_SRC"
 [[ -z "$(find "$KERNEL_SRC" -name '*.rej' 2>/dev/null | head -1)" ]] || die "50_ patch .rej — fixup needed"
 
-say "Wild KSU-Next $WILDKSU_REF (v$KVERNUM) + SusFS v2.2.0 integrated (no 10_ — SusFS in-driver)"
+say "Wild KSU-Next $WILDKSU_REF (v$KVERNUM) + SusFS $SUSFS_VER integrated (no 10_ — SusFS in-driver)"
