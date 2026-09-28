@@ -11,7 +11,10 @@ VARIANT="${VARIANT:?set VARIANT=vanilla|kowsu|ksunext}"
 LOCKFILE="${LOCKFILE:-$PROJ/sources.lock}"
 # shellcheck source=/dev/null
 [[ -f "$LOCKFILE" ]] && source "$LOCKFILE"
-KSUNVER="${WILDKSU_VER_EXPECT:-33219}"
+KSUNVER="${WILDKSU_VER_EXPECT:?sources.lock must pin WILDKSU_VER_EXPECT}"
+# KSU-Next release tag, read from the pinned anchor (same filter as apply-ksunext-susfs.sh).
+KSUN_TAG=$(git -C "$PROJ/.build/wildksu" describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-legacy' "${WILDKSU_VERBASE:-HEAD}" 2>/dev/null || true)
+[[ -n "$KSUN_TAG" ]] || KSUN_TAG="v?"
 KOWSUVER="${KOWSU_VER_EXPECT:-32579}"
 
 # ── Device identity: env (from build.sh) wins; else device.conf; else defaults ──
@@ -77,7 +80,7 @@ case "$VARIANT" in
   kowsu)   LABEL="KoWSU"
            ROOTLINE="ui_print \"   [+] root    : KoWSU $KOWSUVER (install the MATCHING KOWX712 manager)\"" ;;
   ksunext) LABEL="KernelSU-Next+SusFS"
-           ROOTLINE="ui_print \"   [+] root    : KernelSU-Next v3.3.0 ($KSUNVER) + SusFS $SUSFS_VER (v3.3.0 manager)\"" ;;
+           ROOTLINE="ui_print \"   [+] root    : KernelSU-Next $KSUN_TAG ($KSUNVER) + SusFS $SUSFS_VER ($KSUN_TAG manager)\"" ;;
   *)       die "unknown VARIANT=$VARIANT (vanilla|kowsu|ksunext)" ;;
 esac
 KSTRING="$DEVICE_LABEL $LABEL Kernel • $KREL • $DATE"

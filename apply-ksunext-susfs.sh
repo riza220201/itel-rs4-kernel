@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Integrate KernelSU-Next (v3.3.0 "Wild" dev-susfs) + SusFS (version read from source) into $KERNEL_SRC
+# Integrate KernelSU-Next ("Wild" dev-susfs; version tag read from source) + SusFS (version read from source) into $KERNEL_SRC
 # (called by build.sh for the ksunext variant, on a pristine git tree that is
 # git-reverted afterwards). This is the current root variant — it replaced the old
 # official-KernelSU `ksu` variant, and supersedes the earlier v3.1.0-legacy-susfs +
@@ -7,7 +7,7 @@
 #
 # RECIPE (mirrors WildKernels/GKI_KernelSU_SUSFS — the maintained current combo):
 #   * KSU side: pershoot/KernelSU-Next `dev-susfs` ("Wild KSU") — current KSU-Next
-#     v3.3.0 (restructured core/feature/hook/supercall) with SusFS *in-driver*, so
+#     v3.4.0 (restructured core/feature/hook/supercall) with SusFS *in-driver*, so
 #     NO `10_` patch. + WildKernels `static.patch` (de-statics 3 selinux_hide fns so
 #     the SusFS selinux hooks link).
 #   * Kernel side: stock simonpunk SusFS (gki-android12-5.10, version read from source) + pershoot's 2
@@ -64,7 +64,7 @@ git -C "$WILDKSU_SRC" checkout -q "$WILDKSU_REF" 2>/dev/null || git -C "$WILDKSU
   || die "ref $WILDKSU_REF not in clone — fetch it or fix sources.lock"
 # Version = 30000 + rev-count(version-anchor). Pinning to a SHA detaches HEAD, so the
 # old branch-name derivation (dev-susfs → dev → merge-base) no longer applies — use
-# the pinned WILDKSU_VERBASE (merge-base w/ dev = KSU-Next v3.3.0 HEAD → 33219). Fall
+# the pinned WILDKSU_VERBASE (merge-base w/ dev -- what Wild's own Kbuild counts). Fall
 # back to the live branch derivation only if the lockfile pinned no anchor.
 if [[ -n "$WILDKSU_VERBASE" ]]; then
   KVCOMMIT="$WILDKSU_VERBASE"
@@ -75,10 +75,21 @@ fi
 KVERNUM=$(( 30000 + $(git -C "$WILDKSU_SRC" rev-list --count "$KVCOMMIT") ))
 [[ -z "$WILDKSU_VER_EXPECT" || "$KVERNUM" == "$WILDKSU_VER_EXPECT" ]] \
   || die "KSU version drift: computed $KVERNUM but sources.lock expects $WILDKSU_VER_EXPECT — WILDKSU_REF/VERBASE moved; reconcile sources.lock (and package.sh banner) before shipping"
-say "Wild KSU-Next reported version = $KVERNUM (manager must be >= this; v3.3.0 manager matches)"
-say "apply WildKernels static.patch (de-static selinux_hide fns)"
-( cd "$WILDKSU_SRC" && patch -p1 --no-backup-if-mismatch --forward < "$STATIC_PATCH" ) \
-  || die "static.patch failed on $WILDKSU_SRC"
+# Release tag the anchor descends from (read, never hardcoded -- the v6 lesson). Filtered:
+# the clone carries a stale local tag literally named "origin/dev", and -legacy tags.
+KSUN_TAG=$(git -C "$WILDKSU_SRC" describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-legacy' "$KVCOMMIT" 2>/dev/null || echo "v?")
+say "Wild KSU-Next $KSUN_TAG, reported version = $KVERNUM (the $KSUN_TAG manager binds it)"
+# WildKernels' static.patch de-statics three selinux_hide functions so the SusFS hooks
+# link. dev-susfs 34d71c4d ("susfs (v2.3.0): Introduce SuSFS") does the same itself via
+# SUSFS_EXPORT (empty under CONFIG_KSU_SUSFS), and the patch no longer applies there. Skip
+# it on such trees; keep it for older pins (v7.1 @ 3438d6aa still needs it).
+if grep -q '^#define SUSFS_EXPORT' "$WILDKSU_SRC/kernel/feature/selinux_hide.c" 2>/dev/null; then
+  say "static.patch NOT needed: this Wild KSU de-statics selinux_hide itself (SUSFS_EXPORT)"
+else
+  say "apply WildKernels static.patch (de-static selinux_hide fns)"
+  ( cd "$WILDKSU_SRC" && patch -p1 --no-backup-if-mismatch --forward < "$STATIC_PATCH" ) \
+    || die "static.patch failed on $WILDKSU_SRC"
+fi
 
 # 2) Wire in as a built-in driver (symlink + Makefile/Kconfig; pinned+offline).
 say "symlink drivers/kernelsu → $WILDKSU_SRC/kernel"
@@ -98,7 +109,7 @@ grep -q 'drivers/kernelsu/Kconfig' "$DKC" \
 # which is how a release note ends up lying about its own artifact.
 # `|| true`: this runs under `set -e` and a non-matching grep exits 1.
 SUSFS_VER=$(sed -n 's/.*#define SUSFS_VERSION[[:space:]]*"\(v[0-9.]*\)".*/\1/p' \
-            "$SUSFS_SRC/kernel_patches/include/linux/susfs.h" 2>/dev/null | head -1 || true)
+            "$SUSFS/kernel_patches/include/linux/susfs.h" 2>/dev/null | head -1 || true)
 [[ -n "$SUSFS_VER" ]] || SUSFS_VER="unknown"
 say "copy susfs.c + include headers ($SUSFS_VER + pershoot cherry-picks @ susfs-wild)"
 cp "$SUSFS/kernel_patches/fs/"*                "$KERNEL_SRC/fs/"

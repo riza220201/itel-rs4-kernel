@@ -21,3 +21,7 @@ anykernel/.git/
 # personal notes / release drafts (kept local)
 JOURNAL.md
 TELEGRAM-POST*.md
+
+# local backups + python caches
+backup/
+__pycache__/
