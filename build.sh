@@ -8,7 +8,7 @@
 #   variant = vanilla | kowsu | ksunext   (all carry BORE + ntsync + perf + network)
 #     vanilla  : stock config + performance + network + BORE (no root)
 #     kowsu    : vanilla + KoWSU (KOWX712/KernelSU) standalone, own hiding, no SusFS
-#     ksunext  : vanilla + KernelSU-Next v3.3.0 "Wild" dev-susfs + SusFS v2.2.0
+#     ksunext  : vanilla + KernelSU-Next "Wild" dev-susfs + SusFS (versions pinned in sources.lock)
 #                (the root variant — replaced the old official-KernelSU `ksu` one)
 #
 # RECOVERY GOTCHA (learned the hard way): CONFIG_ZRAM MUST NOT be built in on this
@@ -73,8 +73,8 @@ die()  { echo "$(c '1;31')✗ $*$(c 0)" >&2; exit 1; }
 VARIANT="${1:-}"; PACK=0
 [[ "${2:-}" == "--pack" ]] && PACK=1
 case "$VARIANT" in
-  vanilla|kowsu|ksunext) ;;
-  *) die "usage: ./build.sh <vanilla|kowsu|ksunext> [--pack]" ;;
+  vanilla|kowsu|ksunext|droidian) ;;
+  *) die "usage: ./build.sh <vanilla|kowsu|ksunext|droidian> [--pack]" ;;
 esac
 
 KOUT="${KOUT:-$PROJ/.build/out-$VARIANT}"
@@ -113,7 +113,7 @@ fi
 # Kernel branding (shows in `uname -r` / Settings → Kernel version, and /proc/version).
 # Pure strings — KMI-inert (same_magic strips the version token at module load).
 # BRAND is resolved above (device.conf > env > default).
-case "$VARIANT" in vanilla) VTAG=vanilla ;; kowsu) VTAG=kowsu ;; ksunext) VTAG=ksunext ;; esac
+case "$VARIANT" in vanilla) VTAG=vanilla ;; kowsu) VTAG=kowsu ;; ksunext) VTAG=ksunext ;; droidian) VTAG=droidian ;; esac
 export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-riza}"
 export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-RizaKernel}"
 # Pin the build timestamp to the kernel-source commit date so /proc/version — and thus
@@ -198,6 +198,13 @@ prepare_source() {
   [[ -x "$PROJ/apply-reflex.sh" ]] || die "apply-reflex.sh missing — reflex not staged yet"
   KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-reflex.sh"
   ok "reflex applied"
+  # rs4 set — applied to EVERY variant (KMI-safe pure additions): Samsung's
+  # cpufreq_limit + battery pass_through for the One UI port, and the balanced
+  # boot/touch boost + screen-off cap + default "none" I/O. See apply-rs4.sh.
+  step "Applying rs4 set (apply-rs4.sh)"
+  [[ -x "$PROJ/apply-rs4.sh" ]] || die "apply-rs4.sh missing — rs4 set not staged yet"
+  KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-rs4.sh"
+  ok "rs4 set applied"
   case "$VARIANT" in
     kowsu)
       step "Integrating KoWSU (KOWX712) standalone (apply-kowsu.sh)"
@@ -205,12 +212,14 @@ prepare_source() {
       KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-kowsu.sh"
       ok "KoWSU integrated" ;;
     ksunext)
-      step "Integrating KernelSU-Next v3.3.0 Wild + SusFS (apply-ksunext-susfs.sh)"
+      step "Integrating KernelSU-Next Wild + SusFS (apply-ksunext-susfs.sh)"
       [[ -x "$PROJ/apply-ksunext-susfs.sh" ]] || die "apply-ksunext-susfs.sh missing — KernelSU-Next integration not staged yet"
       KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ksunext-susfs.sh"
-      ok "KernelSU-Next v3.3.0 + SusFS applied" ;;
+      ok "KernelSU-Next + SusFS applied" ;;
     vanilla)
       ok "vanilla: BORE only (no root)" ;;
+    droidian)
+      ok "droidian: BORE only (no root; Droidian config fragment added at compose)" ;;
   esac
 }
 
@@ -224,9 +233,11 @@ compose_config() {
     --disable TRIM_UNUSED_KSYMS --set-str UNUSED_KSYMS_WHITELIST ""
   local frags=( "$PROJ/config/performance.fragment" "$PROJ/config/network.fragment"
                 "$PROJ/config/bore.fragment" "$PROJ/config/ntsync.fragment"
-                "$PROJ/config/reflex.fragment" )
+                "$PROJ/config/reflex.fragment" "$PROJ/config/panfrost.fragment"
+                "$PROJ/config/rs4.fragment" )
   [[ "$VARIANT" == "kowsu" ]]   && frags+=( "$PROJ/config/kowsu.fragment" )
   [[ "$VARIANT" == "ksunext" ]] && frags+=( "$PROJ/config/ksunext.fragment" )
+  [[ "$VARIANT" == "droidian" ]] && frags+=( "$PROJ/config/droidian.fragment" )
   for f in "${frags[@]}"; do [[ -f "$f" ]] || die "fragment missing: $f"; done
   # Per-variant branding fragment: -$BRAND-$VTAG, git-hash suffix off.
   cat > "$KOUT/brand.fragment" <<EOF
@@ -245,14 +256,31 @@ EOF
   for must in CONFIG_CFI_CLANG=y CONFIG_LTO_CLANG_FULL=y CONFIG_MODVERSIONS=y; do
     grep -q "^$must" "$KOUT/.config" || die "config invariant missing: $must — KMI would break"
   done
+  # rs4 set: a Kconfig dependency that fails after olddefconfig drops the option
+  # SILENTLY — the build would pass and ship without the feature.
+  for must in CONFIG_CPU_FREQ_LIMIT=y CONFIG_RS4_BALANCE=y CONFIG_RS4_PASS_THROUGH=y \
+              CONFIG_RS4_IOSCHED_DEFAULT_NONE=y CONFIG_RS4_GPU_SKI=y; do
+    grep -q "^$must" "$KOUT/.config" || die "rs4 invariant missing: $must — the fragment did not stick"
+  done
+  if [[ "$VARIANT" == "droidian" ]]; then
+    for must in CONFIG_USER_NS=y CONFIG_PID_NS=y CONFIG_DEVTMPFS=y CONFIG_DEVTMPFS_MOUNT=y CONFIG_VT=y; do
+      grep -q "^$must" "$KOUT/.config" || die "droidian invariant missing: $must — the fragment did not stick (Droidian would not boot)"
+    done
+    grep -q '^CONFIG_CMDLINE_EXTEND=y' "$KOUT/.config" || die "droidian: CONFIG_CMDLINE_EXTEND must stay =y (bootloader cmdline + baked module_blacklist)"
+    grep -q 'module_blacklist=.*scp' "$KOUT/.config" || die "droidian: module_blacklist not baked into CONFIG_CMDLINE"
+    for mustnot in CONFIG_CGROUP_DEVICE CONFIG_CGROUP_PIDS; do
+      grep -q "^# $mustnot is not set" "$KOUT/.config" || die "droidian: $mustnot is enabled — it BREAKS the 198-module KMI; must stay off"
+    done
+    ok "droidian invariants: USER_NS+PID_NS+DEVTMPFS+VT on, CGROUP_DEVICE/PIDS off, module_blacklist baked"
+  fi
   ok "config composed: $(grep -c '=y' "$KOUT/.config") builtins; CFI+LTO+MODVERSIONS on"
 }
 
 # ── Build ──────────────────────────────────────────────────────────────────────
 build_kernel() {
   hdr "Build vmlinux + Image (full CFI+LTO, ~20–30 min)"
-  step "make -j$NPROC vmlinux Image.gz Image.lz4  (log: $LOG)"
-  "${MK[@]}" -j"$NPROC" vmlinux Image.gz Image.lz4 2>&1 | tee "$LOG" \
+  step "make -j$NPROC vmlinux Image.gz Image.lz4 modules  (log: $LOG)"
+  "${MK[@]}" -j"$NPROC" vmlinux Image.gz Image.lz4 modules 2>&1 | tee "$LOG" \
     || die "kernel build failed — see $LOG"
   ok "build finished"
 }

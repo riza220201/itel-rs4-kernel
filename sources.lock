@@ -12,20 +12,20 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── kernel source + toolchain (informational; enforced elsewhere) ───────────────
-KERNEL_COMMON="0f5ad2fa63ab5634b4f66a9b501ced6b7e501f92"   # common submodule — GKI android12-5.10-lts @ 5.10.268
+KERNEL_COMMON="f5a30e5a3ab83709e886d3efc199e01beda06b7e"   # common submodule — GKI android12-5.10-lts @ 5.10.269
 CLANG_VER="clang-r416183b"                                  # AOSP clang 12.0.5 (fetch-toolchain.sh)
 
-# ── ksunext variant: KernelSU-Next v3.3.0 "Wild" (dev-susfs) + SusFS v2.3.0 ──────
+# ── ksunext variant: KernelSU-Next v3.4.0 "Wild" (dev-susfs) + SusFS v2.3.0 ──────
 # WILDKSU_REF is the EXACT commit the driver is built from (was the moving `dev-susfs`
 # branch — that drift was the whole point of pinning). WILDKSU_VERBASE is the version
 # anchor: 30000 + rev-count(VERBASE) is the KSU version the kernel reports, which the
 # manager APK must be >=. apply-ksunext-susfs.sh recomputes it and DIES on any drift
 # from WILDKSU_VER_EXPECT, so the reported version and the installer banner can't
 # disagree (that was a latent bug).
-WILDKSU_REF="3438d6aa431f96a23f9e625bec3d53ce1fb14161"      # pershoot/KernelSU-Next dev-susfs @ this commit
-WILDKSU_VERBASE="706413e0ddd0ed644b55b7e60397546d4ea57257"  # merge-base w/ dev = KSU-Next v3.3.0 HEAD (version anchor)
-WILDKSU_VER_EXPECT="33219"                                   # 30000 + rev-count(WILDKSU_VERBASE); must match at build
-SUSFS_REF="d97d235997ef75ea9254fadc2b7ae37467810220"         # simonpunk gki-android12-5.10 @ ec785f4 (SusFS v2.3.0) + our same 2 cherry-picks, rebased clean
+WILDKSU_REF="d575262c1b40180a0f915544f42d8c4ab34b874b"      # pershoot/KernelSU-Next dev-susfs @ this commit (v3.4.0 + upstream dev c61d8764 + 8 Wild)
+WILDKSU_VERBASE="c61d876480976e553060789759cc4b54c9e7d816"  # merge-base w/ dev (= what Wild's own Kbuild counts); v3.4.0 is its ancestor
+WILDKSU_VER_EXPECT="33312"                                   # 30000 + rev-count(WILDKSU_VERBASE); must match at build
+SUSFS_REF="f72681ec08e705d5bfe3d179e116e3c79c5f8fa9"         # simonpunk gki-android12-5.10 @ 9892175 (SusFS v2.3.0, +26 fixes) + our 2 picks (== pershoot's 6.1 picks)
 
 # ── kowsu variant: KOWX712/KernelSU standalone (own hiding, no SusFS) ────────────
 # Pin to a CURRENT KOWX712 master commit so the kernel version matches the manager
@@ -34,5 +34,5 @@ SUSFS_REF="d97d235997ef75ea9254fadc2b7ae37467810220"         # simonpunk gki-and
 # users got "Not installed" (reported on v2). This commit == the manager build
 # `v3.2.5-54-gcfac3be3` (32579) — kernel + manager from the SAME source commit.
 # RE-BUMP when KOWX712 moves master and the distributed manager moves with it.
-KOWSU_REF="0ffda30c29bdccf913355c5e06f49001e685530c"         # KOWX712/KernelSU TAG v3.3.0-37
+KOWSU_REF="0ffda30c29bdccf913355c5e06f49001e685530c"         # KOWX712/KernelSU TAG v3.3.0-37 (still the newest tag, 2026-09-28)
 KOWSU_VER_EXPECT="32638"                                     # 30000 + rev-count(KOWSU_REF); manager must match this

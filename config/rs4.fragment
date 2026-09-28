@@ -1,0 +1,9 @@
+# rs4 set (apply-rs4.sh): Samsung-compatible interfaces for the One UI port +
+# a balanced frequency policy. All built in: rs4_balance reads the LED core and
+# cpufreq_limit must exist before any vendor module could look for it.
+# KMI-inert: new self-contained drivers + one guarded default in elevator.c.
+CONFIG_CPU_FREQ_LIMIT=y
+CONFIG_RS4_BALANCE=y
+CONFIG_RS4_PASS_THROUGH=y
+CONFIG_RS4_IOSCHED_DEFAULT_NONE=y
+CONFIG_RS4_GPU_SKI=y

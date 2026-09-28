@@ -1,0 +1,39 @@
+# Droidian variant — turns the RS4 GKI kernel into a Droidian/Halium boot kernel.
+# = vanilla (BORE, perf, network) + the lxc-android namespaces + Debian /dev + a VT
+# for the wlroots compositor + a baked module_blacklist so the vendor_boot partition
+# no longer carries the ROM's boot-critical params (a custom recovery can be flashed
+# to vendor_boot without bricking Droidian). All KMI-verified additive — the build's
+# kmi_gate re-checks module_layout=0x7c24b32d + 198/198 vendor CRCs.
+
+# ── lxc-android container namespaces (Droidian runs Android in an lxc container) ──
+# CGROUP_DEVICE / CGROUP_PIDS stay OFF — they shift module_layout and break the KMI.
+CONFIG_NAMESPACES=y
+CONFIG_USER_NS=y
+CONFIG_PID_NS=y
+
+# ── devtmpfs — MTK/Android stock omits it (Android mknods its own /dev); Debian
+# initramfs-tools + udev REQUIRE it, else /dev stays empty and kmsg logging lands in
+# a regular file. Additive driver-core code, KMI-inert (gate re-verifies).
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+
+# ── VT / console — Android ships CONFIG_VT=n; phosh's phoc → wlroots → libseat needs
+# /dev/tty0 to take the seat + DRM master (no tty0 → no modeset → black panel).
+# FRAMEBUFFER_CONSOLE also gives a text console = boot proof-of-life. KMI-inert.
+CONFIG_VT=y
+CONFIG_VT_CONSOLE=y
+CONFIG_VT_HW_CONSOLE_BINDING=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY=y
+
+# ── Baked kernel cmdline — the vendor_boot-independence fix ───────────────────────
+# CONFIG_CMDLINE_EXTEND=y (already in the stock config) APPENDS this to whatever
+# cmdline the bootloader passes, so these params are present regardless of which
+# vendor_boot is flashed (stock, our own, or a custom recovery). module_blacklist is
+# read by the kernel module loader and applies to the Android container's own insmod
+# too — the one reliable way to keep scp (SError/brownout) + camera_dip_isp6s (CFI
+# panic) + the cm_mgr/swpm followers from loading. The leading params are MTK stock's
+# own CONFIG_CMDLINE, kept verbatim; only module_blacklist is appended.
+# (systempart= is NOT baked here — it is super-only and defaulted in the Halium initrd
+# so this same kernel still boots the classic rootfs.img path.)
+CONFIG_CMDLINE="stack_depot_disable=on kasan.stacktrace=off kvm-arm.mode=protected cgroup_disable=pressure cgroup.memory=nokmem module_blacklist=camera_dip_isp6s,mtk_swpm,mtk_swpm_dbg_common_v1,mtk_swpm_dbg_v6789,scp,mtk_cm_mgr,mtk_cm_ipi,mtk_cm_mgr_mt6789"
