@@ -25,3 +25,6 @@ TELEGRAM-POST*.md
 # local backups + python caches
 backup/
 __pycache__/
+# device logs (personal data -- never in this public repo)
+dmesg.txt
+logcat.txt
