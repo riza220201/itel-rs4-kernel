@@ -1,0 +1,15 @@
+# SELinux policy for /dev/ntsync (loaded at boot by Magisk / KernelSU-Next / KoWSU).
+#
+# 1) Define a dedicated device type for the node so the allow is scoped to it
+#    (instead of granting apps access to every generic `device` node).
+type ntsync_device dev_type
+#
+# 2) Let the app domains Winlator/Wine run in open + ioctl the node. ntsync's whole
+#    API is ioctl-based; open/getattr cover fd setup, read/write are harmless extras.
+#    untrusted_app_all is the attribute covering untrusted_app + every versioned
+#    untrusted_app_<sdk> domain (version-proof); untrusted_app/isolated_app are listed
+#    explicitly as a fallback for bases without the attribute. Unknown types are
+#    skipped by the policy loader, so extra lines are safe.
+allow untrusted_app_all ntsync_device chr_file { open read write ioctl getattr }
+allow untrusted_app     ntsync_device chr_file { open read write ioctl getattr }
+allow isolated_app      ntsync_device chr_file { open read write ioctl getattr }
