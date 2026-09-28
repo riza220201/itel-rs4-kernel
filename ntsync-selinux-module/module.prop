@@ -1,0 +1,6 @@
+id=ntsync_selinux
+name=ntsync SELinux enabler (Winlator/Wine)
+version=v1-20260721
+versionCode=1
+author=Riza
+description=Grants apps (Winlator/Wine, untrusted_app) SELinux access to /dev/ntsync so the in-kernel NT-sync backend can be used. Labels the node ntsync_device and adds the allow rules at boot. Needs a kernel that provides /dev/ntsync (CONFIG_NTSYNC — Riza Kernel v4+). Works on Magisk and KernelSU-Next/KoWSU.
