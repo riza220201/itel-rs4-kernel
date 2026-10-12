@@ -31,7 +31,7 @@ SRC="$PROJ/patches/rs4"
 say(){ echo "  [rs4] $*"; }
 die(){ echo "✗ [rs4] $*" >&2; exit 1; }
 
-for f in cpufreq_limit.c cpufreq_limit.h rs4_balance.c rs4_pass_through.c rs4_gpu_ski.c; do
+for f in cpufreq_limit.c cpufreq_limit.h rs4_balance.c rs4_pass_through.c rs4_gpu_ski.c rs4_sec_tsp.c hid-sony-ds4-clones.patch; do
   [[ -f "$SRC/$f" ]] || die "source missing: $SRC/$f"
 done
 
@@ -61,7 +61,8 @@ cp "$SRC/cpufreq_limit.c"    "$KERNEL_SRC/drivers/cpufreq/cpufreq_limit.c"
 cp "$SRC/rs4_balance.c"      "$KERNEL_SRC/drivers/cpufreq/rs4_balance.c"
 cp "$SRC/rs4_pass_through.c" "$KERNEL_SRC/drivers/power/supply/rs4_pass_through.c"
 cp "$SRC/rs4_gpu_ski.c"      "$KERNEL_SRC/drivers/misc/rs4_gpu_ski.c"
-say "staged cpufreq_limit.{c,h}, rs4_balance.c, rs4_pass_through.c, rs4_gpu_ski.c"
+cp "$SRC/rs4_sec_tsp.c"      "$KERNEL_SRC/drivers/misc/rs4_sec_tsp.c"
+say "staged cpufreq_limit.{c,h}, rs4_balance.c, rs4_pass_through.c, rs4_gpu_ski.c, rs4_sec_tsp.c"
 
 # ── 2. Makefiles ──────────────────────────────────────────────────────────────
 if ! grep -q 'cpufreq_limit.o' "$CFM"; then
@@ -81,7 +82,11 @@ if ! grep -q 'rs4_gpu_ski.o' "$MSM"; then
   printf '\n# rs4: Samsung /sys/kernel/gpu (SKI) over the itel GED/gpufreq modules\nobj-$(CONFIG_RS4_GPU_SKI)\t+= rs4_gpu_ski.o\n' >> "$MSM"
 fi
 grep -q 'rs4_gpu_ski.o' "$MSM" || die "misc Makefile insert failed"
-say "Makefiles += cpufreq_limit.o rs4_balance.o rs4_pass_through.o rs4_gpu_ski.o"
+if ! grep -q 'rs4_sec_tsp.o' "$MSM"; then
+  printf '\n# rs4: Samsung /sys/class/sec/tsp (double tap to wake) over the itel touch core\nobj-$(CONFIG_RS4_SEC_TSP)\t+= rs4_sec_tsp.o\n' >> "$MSM"
+fi
+grep -q 'rs4_sec_tsp.o' "$MSM" || die "misc Makefile insert failed (sec_tsp)"
+say "Makefiles += cpufreq_limit.o rs4_balance.o rs4_pass_through.o rs4_gpu_ski.o rs4_sec_tsp.o"
 
 # ── 3. Kconfig ────────────────────────────────────────────────────────────────
 if ! grep -q 'config CPU_FREQ_LIMIT' "$CFK"; then
@@ -156,7 +161,26 @@ EOKC
   mv "$MSK.new" "$MSK"
 fi
 grep -q 'config RS4_GPU_SKI' "$MSK" || die "misc Kconfig insert failed"
-say "Kconfig += CPU_FREQ_LIMIT RS4_BALANCE RS4_PASS_THROUGH RS4_IOSCHED_DEFAULT_NONE RS4_GPU_SKI"
+if ! grep -q 'config RS4_SEC_TSP' "$MSK"; then
+  [[ "$(tail -n1 "$MSK")" == "endmenu" ]] || die "drivers/misc/Kconfig no longer ends in endmenu (sec_tsp)"
+  sed '$d' "$MSK" > "$MSK.new"
+  cat >> "$MSK.new" <<'EOKC'
+
+config RS4_SEC_TSP
+	bool "Samsung /sys/class/sec/tsp (double tap to wake) over the itel touch core"
+	depends on MODULES && SYSFS
+	help
+	  Creates Samsung's tsp node (cmd, cmd_list, cmd_status, cmd_result,
+	  support_feature) under the "sec" class of MediaTek's sec module and
+	  maps One UI's "aot_enable,N" onto the double-tap gesture of
+	  Transsion's adaptive_ts touch core.
+
+endmenu
+EOKC
+  mv "$MSK.new" "$MSK"
+fi
+grep -q 'config RS4_SEC_TSP' "$MSK" || die "misc Kconfig insert failed (sec_tsp)"
+say "Kconfig += CPU_FREQ_LIMIT RS4_BALANCE RS4_PASS_THROUGH RS4_IOSCHED_DEFAULT_NONE RS4_GPU_SKI RS4_SEC_TSP"
 
 # ── 4. elevator.c: an early return in elevator_get_default() ──────────────────
 if ! grep -q 'CONFIG_RS4_IOSCHED_DEFAULT_NONE' "$ELV"; then
@@ -164,5 +188,21 @@ if ! grep -q 'CONFIG_RS4_IOSCHED_DEFAULT_NONE' "$ELV"; then
 fi
 [[ "$(grep -c 'CONFIG_RS4_IOSCHED_DEFAULT_NONE' "$ELV")" == 1 ]] || die "elevator.c insert failed"
 say "elevator.c: default none (when CONFIG_RS4_IOSCHED_DEFAULT_NONE)"
+
+# ── 5. hid-sony: third-party DualShock 4 tolerance ───────────────────────────
+# A tester's USB DS4 (054c:09cc) got no input device on v7: GKI 5.10's
+# sony_check_add() fails the probe when the pad does not answer feature report
+# 0x81 (its MAC address), which third-party DS4s commonly do not implement.
+# The patch degrades instead of failing: random locally administered MAC,
+# neutral calibration (also when the report is all zeros: a zero sens_denom
+# would divide by zero in dualshock4_parse_report()), unknown fw/hw version.
+# Built-in driver, no struct change -> KMI-inert.
+HS="$KERNEL_SRC/drivers/hid/hid-sony.c"
+if ! grep -q 'rs4: third-party DS4s' "$HS"; then
+  patch -p1 -d "$KERNEL_SRC" --forward --no-backup-if-mismatch -s < "$SRC/hid-sony-ds4-clones.patch" \
+    || die "hid-sony-ds4-clones.patch does not apply"
+fi
+[[ "$(grep -c 'rs4: ' "$HS")" -ge 4 ]] || die "hid-sony patch markers missing after apply"
+say "hid-sony: DS4 without report 0x81/0x02/0xA3 degrades instead of failing"
 
 say "rs4 set applied (KMI-safe)"
