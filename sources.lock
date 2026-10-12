@@ -34,5 +34,5 @@ SUSFS_REF="f72681ec08e705d5bfe3d179e116e3c79c5f8fa9"         # simonpunk gki-and
 # users got "Not installed" (reported on v2). This commit == the manager build
 # `v3.2.5-54-gcfac3be3` (32579) — kernel + manager from the SAME source commit.
 # RE-BUMP when KOWX712 moves master and the distributed manager moves with it.
-KOWSU_REF="0ffda30c29bdccf913355c5e06f49001e685530c"         # KOWX712/KernelSU TAG v3.3.0-37 (still the newest tag, 2026-09-28)
-KOWSU_VER_EXPECT="32638"                                     # 30000 + rev-count(KOWSU_REF); manager must match this
+KOWSU_REF="b9f852d61f91baf36b06f59a3febffd574c23085"         # KOWX712/KernelSU master 2026-10-12 "manager: translation squash" (v3.3.0-37 + 69; no newer tag)
+KOWSU_VER_EXPECT="32707"                                     # 30000 + rev-count(KOWSU_REF); manager must match this
