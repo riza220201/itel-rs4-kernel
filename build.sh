@@ -260,7 +260,7 @@ EOF
   # SILENTLY — the build would pass and ship without the feature.
   for must in CONFIG_CPU_FREQ_LIMIT=y CONFIG_RS4_BALANCE=y CONFIG_RS4_PASS_THROUGH=y \
               CONFIG_RS4_IOSCHED_DEFAULT_NONE=y CONFIG_RS4_GPU_SKI=y \
-              CONFIG_RS4_SEC_TSP=y; do
+              CONFIG_RS4_SEC_TSP=y CONFIG_RS4_BOARD_INFO=y; do
     grep -q "^$must" "$KOUT/.config" || die "rs4 invariant missing: $must — the fragment did not stick"
   done
   if [[ "$VARIANT" == "droidian" ]]; then

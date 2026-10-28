@@ -21,6 +21,11 @@
 #     block/elevator.c   default I/O scheduler "none" instead of mq-deadline
 #       for single-queue devices (CONFIG_RS4_IOSCHED_DEFAULT_NONE).
 #
+#   VIVO COMPAT -- for the OriginOS 6 port (itel-rs4-devicetree, notes/vivoport):
+#     drivers/misc/rs4_board_info.c   /sys/board_info/{cpu_set,user_cpu_freq},
+#       what About phone's processor line is built from ("2.2 GHz Helio G99
+#       Octa-core"; proven live 2026-10-28 as a module on v9).
+#
 # WHY it is KMI-safe: new self-contained built-in drivers + Kconfig/Makefile
 # lines + one IS_ENABLED() early return in elevator_get_default(). No struct
 # changes, no existing-symbol signature changes. The build's KMI gate
@@ -31,7 +36,7 @@ SRC="$PROJ/patches/rs4"
 say(){ echo "  [rs4] $*"; }
 die(){ echo "✗ [rs4] $*" >&2; exit 1; }
 
-for f in cpufreq_limit.c cpufreq_limit.h rs4_balance.c rs4_pass_through.c rs4_gpu_ski.c rs4_sec_tsp.c hid-sony-ds4-clones.patch; do
+for f in cpufreq_limit.c cpufreq_limit.h rs4_balance.c rs4_pass_through.c rs4_gpu_ski.c rs4_sec_tsp.c rs4_board_info.c hid-sony-ds4-clones.patch; do
   [[ -f "$SRC/$f" ]] || die "source missing: $SRC/$f"
 done
 
@@ -62,7 +67,8 @@ cp "$SRC/rs4_balance.c"      "$KERNEL_SRC/drivers/cpufreq/rs4_balance.c"
 cp "$SRC/rs4_pass_through.c" "$KERNEL_SRC/drivers/power/supply/rs4_pass_through.c"
 cp "$SRC/rs4_gpu_ski.c"      "$KERNEL_SRC/drivers/misc/rs4_gpu_ski.c"
 cp "$SRC/rs4_sec_tsp.c"      "$KERNEL_SRC/drivers/misc/rs4_sec_tsp.c"
-say "staged cpufreq_limit.{c,h}, rs4_balance.c, rs4_pass_through.c, rs4_gpu_ski.c, rs4_sec_tsp.c"
+cp "$SRC/rs4_board_info.c"   "$KERNEL_SRC/drivers/misc/rs4_board_info.c"
+say "staged cpufreq_limit.{c,h}, rs4_balance.c, rs4_pass_through.c, rs4_gpu_ski.c, rs4_sec_tsp.c, rs4_board_info.c"
 
 # ── 2. Makefiles ──────────────────────────────────────────────────────────────
 if ! grep -q 'cpufreq_limit.o' "$CFM"; then
@@ -86,7 +92,11 @@ if ! grep -q 'rs4_sec_tsp.o' "$MSM"; then
   printf '\n# rs4: Samsung /sys/class/sec/tsp (double tap to wake) over the itel touch core\nobj-$(CONFIG_RS4_SEC_TSP)\t+= rs4_sec_tsp.o\n' >> "$MSM"
 fi
 grep -q 'rs4_sec_tsp.o' "$MSM" || die "misc Makefile insert failed (sec_tsp)"
-say "Makefiles += cpufreq_limit.o rs4_balance.o rs4_pass_through.o rs4_gpu_ski.o rs4_sec_tsp.o"
+if ! grep -q 'rs4_board_info.o' "$MSM"; then
+  printf '\n# rs4: vivo /sys/board_info (cpu_set, user_cpu_freq) for the OriginOS port\nobj-$(CONFIG_RS4_BOARD_INFO)\t+= rs4_board_info.o\n' >> "$MSM"
+fi
+grep -q 'rs4_board_info.o' "$MSM" || die "misc Makefile insert failed (board_info)"
+say "Makefiles += cpufreq_limit.o rs4_balance.o rs4_pass_through.o rs4_gpu_ski.o rs4_sec_tsp.o rs4_board_info.o"
 
 # ── 3. Kconfig ────────────────────────────────────────────────────────────────
 if ! grep -q 'config CPU_FREQ_LIMIT' "$CFK"; then
@@ -180,7 +190,26 @@ EOKC
   mv "$MSK.new" "$MSK"
 fi
 grep -q 'config RS4_SEC_TSP' "$MSK" || die "misc Kconfig insert failed (sec_tsp)"
-say "Kconfig += CPU_FREQ_LIMIT RS4_BALANCE RS4_PASS_THROUGH RS4_IOSCHED_DEFAULT_NONE RS4_GPU_SKI RS4_SEC_TSP"
+if ! grep -q 'config RS4_BOARD_INFO' "$MSK"; then
+  [[ "$(tail -n1 "$MSK")" == "endmenu" ]] || die "drivers/misc/Kconfig no longer ends in endmenu (board_info)"
+  sed '$d' "$MSK" > "$MSK.new"
+  cat >> "$MSK.new" <<'EOKC'
+
+config RS4_BOARD_INFO
+	bool "vivo /sys/board_info (cpu_set, user_cpu_freq) for About phone"
+	depends on CPU_FREQ && SYSFS
+	help
+	  The two vivo kernel nodes OriginOS's About phone reads: cpu_set
+	  ("<family>_<model>", parameter rs4_board_info.cpu_set, default
+	  Helio_G99) and user_cpu_freq (the highest cpufreq cpuinfo.max_freq
+	  in GHz, read live, so an mcupm overclock shows through).
+
+endmenu
+EOKC
+  mv "$MSK.new" "$MSK"
+fi
+grep -q 'config RS4_BOARD_INFO' "$MSK" || die "misc Kconfig insert failed (board_info)"
+say "Kconfig += CPU_FREQ_LIMIT RS4_BALANCE RS4_PASS_THROUGH RS4_IOSCHED_DEFAULT_NONE RS4_GPU_SKI RS4_SEC_TSP RS4_BOARD_INFO"
 
 # ── 4. elevator.c: an early return in elevator_get_default() ──────────────────
 if ! grep -q 'CONFIG_RS4_IOSCHED_DEFAULT_NONE' "$ELV"; then
