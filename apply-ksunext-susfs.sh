@@ -78,7 +78,15 @@ KVERNUM=$(( 30000 + $(git -C "$WILDKSU_SRC" rev-list --count "$KVCOMMIT") ))
 # Release tag the anchor descends from (read, never hardcoded -- the v6 lesson). Filtered:
 # the clone carries a stale local tag literally named "origin/dev", and -legacy tags.
 KSUN_TAG=$(git -C "$WILDKSU_SRC" describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-legacy' "$KVCOMMIT" 2>/dev/null || echo "v?")
-say "Wild KSU-Next $KSUN_TAG, reported version = $KVERNUM (the $KSUN_TAG manager binds it)"
+# ksud only runs when its KSU uapi equals the kernel's: name the manager that has it.
+ksun_uapi(){ git -C "$WILDKSU_SRC" grep -h -E 'static const __u32 KERNEL_SU_UAPI_VERSION = [0-9]+' "$1" 2>/dev/null \
+             | sed -n 's/.*= \([0-9]*\);.*/\1/p' | head -1; }
+KSUN_UAPI=$(ksun_uapi "$KVCOMMIT")
+if [[ -n "$KSUN_UAPI" && "$KSUN_UAPI" == "$(ksun_uapi "$KSUN_TAG")" ]]; then
+  say "Wild KSU-Next $KSUN_TAG, reported version = $KVERNUM, uapi $KSUN_UAPI (the $KSUN_TAG manager binds it)"
+else
+  say "Wild KSU-Next $KSUN_TAG+, reported version = $KVERNUM, uapi ${KSUN_UAPI:-?} != $KSUN_TAG's: needs the KernelSU-Next CI manager built from $(git -C "$WILDKSU_SRC" describe --tags --match 'v[0-9]*' --exclude '*-legacy' "$KVCOMMIT" 2>/dev/null || echo "$KVCOMMIT")"
+fi
 # WildKernels' static.patch de-statics three selinux_hide functions so the SusFS hooks
 # link. dev-susfs 34d71c4d ("susfs (v2.3.0): Introduce SuSFS") does the same itself via
 # SUSFS_EXPORT (empty under CONFIG_KSU_SUSFS), and the patch no longer applies there. Skip

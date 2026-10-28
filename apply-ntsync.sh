@@ -8,6 +8,11 @@
 # semaphores/mutexes/events with in-kernel objects, replacing the eventfd esync/fsync
 # storms — the big Windows-game-under-emulation sync-overhead win.
 #
+# + two later mainline fixes (v9, 2026-10-28): 61611481f7b5 "reject wait ioctls with zero
+# owner" (EINVAL as ntsync.rst requires) and 180a232ea780 "Honour caller's time namespace
+# for absolute MONOTONIC timeouts" (timens_ktime_to_host() exists on 5.10). 92527e473911
+# ("Check wait count based on byte size") was already in the v6.14 base.
+#
 # The only 5.10 delta is debug-only: mainline's generic lockdep_assert(cond), the
 # no-CONFIG_LOCKDEP spelling of lockdep_is_held(), and the LOCK_STATE_* enum postdate
 # 5.10 — a small shim inside ntsync.c provides them (compiles to nothing with LOCKDEP

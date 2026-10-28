@@ -36,10 +36,10 @@ index aecaaed87..c8feb519d 100644
 +obj-$(CONFIG_NTSYNC)		+= ntsync.o
 diff --git a/drivers/misc/ntsync.c b/drivers/misc/ntsync.c
 new file mode 100644
-index 000000000..56ce5b147
+index 000000000..6337428f7
 --- /dev/null
 +++ b/drivers/misc/ntsync.c
-@@ -0,0 +1,1241 @@
+@@ -0,0 +1,1247 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * ntsync.c - Kernel driver for NT synchronization primitives
@@ -61,6 +61,7 @@ index 000000000..56ce5b147
 +#include <linux/sched/signal.h>
 +#include <linux/slab.h>
 +#include <linux/spinlock.h>
++#include <linux/time_namespace.h>
 +#include <uapi/linux/ntsync.h>
 +
 +/*
@@ -910,6 +911,8 @@ index 000000000..56ce5b147
 +
 +	if (args->flags & NTSYNC_WAIT_REALTIME)
 +		clock = CLOCK_REALTIME;
++	else
++		timeout = timens_ktime_to_host(clock, timeout);
 +
 +	do {
 +		if (signal_pending(current)) {
@@ -944,6 +947,9 @@ index 000000000..56ce5b147
 +	__u32 i, j;
 +
 +	if (args->pad || (args->flags & ~NTSYNC_WAIT_REALTIME))
++		return -EINVAL;
++
++	if (!args->owner)
 +		return -EINVAL;
 +
 +	if (size >= sizeof(fds))

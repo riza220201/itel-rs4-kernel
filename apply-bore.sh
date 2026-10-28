@@ -2,8 +2,15 @@
 # Apply the BORE scheduler backport to $KERNEL_SRC (called by build.sh for ALL
 # variants, on a pristine git tree that is git-reverted afterwards).
 #
-# BORE = Burst-Oriented Response Enhancer (firelzrd/bore-scheduler bore5.1.0),
-# hand-backported to android12-5.10. Minimal port: no atavistic fork inheritance.
+# BORE = Burst-Oriented Response Enhancer (firelzrd/bore-scheduler BORE 7.0.0),
+# hand-backported to android12-5.10 CFS (v9; v8 and earlier carried bore5.1.0).
+# Carried: the 7.0 burst-penalty engine (16-bit penalties, kthreads exempt),
+# reweighting by effective nice, fork-time inheritance from the thread group or
+# the ancestor hub (with the RCU children list it needs: fork.c/exit.c), and the
+# 7.0 sysctls (sched_bore, sched_burst_{inherit_type,smoothness,penalty_offset,
+# penalty_scale,cache_lifetime}); per-task numbers in /proc/<pid>/sched.
+# Not carried: 7.0's EEVDF-only parts (slice protection, deadline rescale, sleep
+# credit, futex-wait placement, base-slice tuning) -- 5.10 is CFS.
 #
 # WHY it is KMI-safe: the per-entity burst state is packed into sched_entity's
 # GKI KABI-reserved slots via ANDROID_KABI_USE(). Under __GENKSYMS__ that macro
@@ -40,5 +47,7 @@ fi
 grep -q 'ANDROID_KABI_USE(1, u64 burst_time)' "$KERNEL_SRC/include/linux/sched.h" \
   || die "BORE KABI packing not applied to sched_entity"
 grep -q 'config SCHED_BORE' "$KERNEL_SRC/init/Kconfig" || die "SCHED_BORE Kconfig missing"
+grep -q '^#define SCHED_BORE_VERSION  "7.0.0"' "$KERNEL_SRC/include/linux/sched/bore.h" \
+  || die "BORE 7.0.0 header missing"
 
 say "BORE backport applied (KMI-safe; kernel.sched_bore runtime toggle, default on)"

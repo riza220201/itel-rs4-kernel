@@ -15,6 +15,18 @@ KSUNVER="${WILDKSU_VER_EXPECT:?sources.lock must pin WILDKSU_VER_EXPECT}"
 # KSU-Next release tag, read from the pinned anchor (same filter as apply-ksunext-susfs.sh).
 KSUN_TAG=$(git -C "$PROJ/.build/wildksu" describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-legacy' "${WILDKSU_VERBASE:-HEAD}" 2>/dev/null || true)
 [[ -n "$KSUN_TAG" ]] || KSUN_TAG="v?"
+# Which manager drives this kernel: ksud refuses to run (no modules) unless its KSU
+# uapi equals the kernel's. Same uapi as the release tag -> that release's manager;
+# different (v9: the anchor is past the uapi 5 -> 6 bump, no release has it yet) ->
+# the KernelSU-Next CI build of the anchor commit itself, named by git describe.
+ksun_uapi(){ git -C "$PROJ/.build/wildksu" grep -h -E 'static const __u32 KERNEL_SU_UAPI_VERSION = [0-9]+' "$1" 2>/dev/null \
+             | sed -n 's/.*= \([0-9]*\);.*/\1/p' | head -1; }
+KSUN_UAPI=$(ksun_uapi "${WILDKSU_VERBASE:-HEAD}")
+if [[ -n "$KSUN_UAPI" && "$KSUN_UAPI" == "$(ksun_uapi "$KSUN_TAG")" ]]; then
+  KSUN_MGR="$KSUN_TAG manager"
+else
+  KSUN_MGR="CI manager $(git -C "$PROJ/.build/wildksu" describe --tags --match 'v[0-9]*' --exclude '*-legacy' "${WILDKSU_VERBASE:-HEAD}" 2>/dev/null || echo '?'), uapi ${KSUN_UAPI:-?}"
+fi
 KOWSUVER="${KOWSU_VER_EXPECT:-32579}"
 
 # ── Device identity: env (from build.sh) wins; else device.conf; else defaults ──
@@ -80,7 +92,7 @@ case "$VARIANT" in
   kowsu)   LABEL="KoWSU"
            ROOTLINE="ui_print \"   [+] root    : KoWSU $KOWSUVER (install the MATCHING KOWX712 manager)\"" ;;
   ksunext) LABEL="KernelSU-Next+SusFS"
-           ROOTLINE="ui_print \"   [+] root    : KernelSU-Next $KSUN_TAG ($KSUNVER) + SusFS $SUSFS_VER ($KSUN_TAG manager)\"" ;;
+           ROOTLINE="ui_print \"   [+] root    : KernelSU-Next $KSUN_TAG ($KSUNVER) + SusFS $SUSFS_VER ($KSUN_MGR)\"" ;;
   *)       die "unknown VARIANT=$VARIANT (vanilla|kowsu|ksunext)" ;;
 esac
 KSTRING="$DEVICE_LABEL $LABEL Kernel • $KREL • $DATE"
