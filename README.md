@@ -23,22 +23,24 @@ zero force-load, and it boots stock or custom ROMs the same.
 
 | variant | what | `uname -r` |
 |---|---|---|
-| **vanilla** | performance + network + BORE + reflex + ntsync, no root | `5.10.260-Riza-vanilla` |
-| **ksunext** | vanilla + KernelSU-Next + SusFS | `5.10.260-Riza-ksunext` |
-| **kowsu** | vanilla + KoWSU (own hiding, no SusFS) | `5.10.260-Riza-kowsu` |
+| **vanilla** | performance + network + BORE + reflex + ntsync + rs4 set, no root | `5.10.272-Riza-vanilla` |
+| **ksunext** | vanilla + KernelSU-Next + SusFS | `5.10.272-Riza-ksunext` |
+| **kowsu** | vanilla + KoWSU (own hiding, no SusFS) | `5.10.272-Riza-kowsu` |
 
 All three ship as an **AnyKernel3 zip** (flash in OrangeFox — swaps only the
 kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`**
 (direct antumbra DA flash, stock firmware only).
 
 **What's tuned (all variants):**
-- sched — **BORE** (Burst-Oriented Response Enhancer) for snappier foreground
+- sched — **BORE 7.0.0** (Burst-Oriented Response Enhancer) for snappier foreground
   under load; on by default, flip it off live with `sysctl kernel.sched_bore=0`
   (no reflash). Experimental on this MTK EAS SoC.
-- cpufreq — **reflex** (firelzrd v0.3.1), an *interactive + schedutil hybrid*
-  backported from 6.x: an idle-time (kcpustat) derived **hispeed floor** blended
-  into schedutil's PELT scaling with a PELT-complementary 32 ms decay — schedutil's
-  steady state, but a much faster jump to high clock when a burst of work lands.
+- cpufreq — **reflex** (firelzrd v0.4.0), backported from 6.12: schedutil's
+  PELT scaling plus a **speed floor** chosen from the SoC's Energy Model as the
+  best energy/latency trade-off for the work that just woke up, so bursts land on
+  a fast clock without parking the cluster there. `latency_weight` sets the
+  trade-off; the default here is **300** (upstream's 1000 kept the six little
+  cores near max, because one of them has always just woken).
   This device's tree selects `reflex` for **policy0** (little) and **policy6**
   (big); stock MediaTek kernels ship it but clean GKI does not, so that write
   **silently no-op'd** and the CPU fell back to schedutil. From v5 it takes effect.
@@ -58,16 +60,22 @@ kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`*
   partition, shares the `boot` kernel; built-in zram's early mm collides with it).
   Load zram as a KSU-Next kernel module at normal boot instead — recovery never
   loads modules, so it stays safe.
-- **ksunext** — KernelSU-Next **v3.3.0** + SusFS v2.2.0 (root + full hiding)
+- port compat (**rs4 set**) — what the One UI and OriginOS ports on this phone
+  look for: Samsung's `cpufreq_limit`, battery `pass_through`, `/sys/kernel/gpu`
+  (Game Optimizing Service) and `sec/tsp` (double tap to wake); vivo's
+  `/sys/board_info` (About phone's processor line). Plus a balanced boot/touch
+  boost with a screen-off cap, `none` as the default I/O scheduler, and DS4-clone
+  controller support in `hid-sony`. All new, self-contained code (KMI-inert).
+- **ksunext** — KernelSU-Next **v3.4.2+ (33405)** + SusFS **v2.3.0** (root + full hiding)
 - **kowsu** — KoWSU (KOWX712 KernelSU), a lean KernelSU-Next fork with its own
   kernel-side hiding (per-app umount + selinux hide). No SusFS — KoWSU's tree is
   restructured and SusFS doesn't target it, so this is the standalone build.
 
 > On the root variant: earlier releases used official KernelSU because SusFS had
 > no clean pairing with the restructured KSU-Next source on this 5.10 tree. The
-> current `ksunext` moves to the **latest KernelSU-Next (v3.3.0)** by taking the
+> current `ksunext` tracks the **latest KernelSU-Next** by taking the
 > **Wild KSU** route — pershoot's `dev-susfs` branch (KSU-Next with SusFS in-driver)
-> plus the stock SusFS v2.2.0 kernel patch with pershoot's extension cherry-picks,
+> plus simonpunk's SusFS kernel patch with pershoot's extension cherry-picks,
 > the same combination WildKernels ships. It verifies against the vendor ABI
 > (198/198), so official KernelSU is retired. KoWSU stays as the no-SusFS option.
 
@@ -85,22 +93,27 @@ It's A/B (Virtual A/B).
 Keep your current/stock `boot.img` around to restore — flashing only touches the
 kernel, so a bad flash is boot-only and easy to recover.
 
-**ksunext build:** install the **KernelSU-Next v3.3.0** manager (from
-[KernelSU-Next/KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next)
-releases). The kernel reports version **33219**; the manager must be at least that
-or `su` is denied.
+**ksunext build:** the kernel reports KernelSU version **33405** and speaks KSU
+**uapi 6**. No KernelSU-Next *release* has uapi 6 yet (v3.4.2 is uapi 5): a
+release `ksud`/manager logs "UAPI version mismatch" and skips its boot stages, so
+**no modules load**. Install the manager from KernelSU-Next's own CI build of the same commit
+(`v3.4.2-50-gb427a3f9`, versionCode 33405, signed with the official key):
+[manager.zip](https://nightly.link/KernelSU-Next/KernelSU-Next/actions/runs/39297115788/manager.zip)
+(or `manager-spoofed.zip` from the same run). Uninstall the old manager first, then
+reboot once after installing.
 
-**kowsu build:** the kernel reports KoWSU version **32579** and pairs with the
-**matching** [KOWX712/KernelSU](https://github.com/KOWX712/KernelSU) manager
-(`v3.2.5-54-gcfac3be3`, i.e. the current build). Install *that* manager — a
-mismatched/older one shows "Not installed" (KernelSU only binds a manager it pairs
-with, not merely "≥"). This tracks KOWX712's fast-moving `master`; if a newer manager
-stops binding, the kernel needs re-bumping to match (open an issue).
+**kowsu build:** the kernel reports KoWSU version **32737** and pairs with the
+**matching** [KOWX712/KernelSU](https://github.com/KOWX712/KernelSU) manager: the
+CI build of commit `6366f25b` (`v3.3.0-136`, run #455 in KOWX712's Actions).
+Install *that* manager — a mismatched/older one shows "Not installed" (KernelSU only
+binds a manager it pairs with, not merely "≥"). This tracks KOWX712's fast-moving
+`master`; if a newer manager stops binding, the kernel needs re-bumping to match
+(open an issue).
 
 ## Building it yourself
 
 Clone with the kernel source submodule (Google GKI `android12-5.10-lts`) + fetch
-the Clang toolchain (1.4 G, git-ignored — not vendored):
+the Clang toolchain (Neutron clang 24, ~80 MB download, git-ignored — not vendored):
 ```sh
 git clone --recursive https://github.com/riza220201/itel-rs4-kernel
 # already cloned? →  git submodule update --init --depth 1 common
@@ -163,15 +176,39 @@ The tool is device-agnostic — everything device-specific lives in **`device.co
 Everything else (`KERNEL_SRC`, `STOCK_CONFIG`, `BOOT_IMG`, `CLANG_DIR`) has a sane
 default and is overridable in `device.conf` or via env.
 
+### Toolchain
+
+Since v9 the kernels are built with **Neutron clang 24** (`neutron-clang-06092026`,
+LLVM `f42c87ba`); up to v8 it was AOSP `clang-r416183b` (clang 12), the compiler of
+the stock kernel and of the vendor modules. A newer compiler can break the device in
+two ways a CRC gate cannot see, so the build checks both:
+
+- **Lost exports.** Any clang ≥ 14 turns on `STACKPROTECTOR_PER_TASK` by itself,
+  which drops the `__stack_chk_guard` export that 166 of the 198 vendor modules
+  import — "Unknown symbol", nothing boots, and the CRCs still match. `build.sh`
+  keeps the global stack guard for every compiler, and `lib/kmi_check.py` fails on
+  any import the kernel no longer exports (compared with `kmi-unresolved.baseline`,
+  the imports a booted build resolves outside the module set).
+- **CFI type ids.** 5.10's cross-DSO CFI checks every indirect call between the
+  kernel and a vendor module by a hash of the function type. `lib/cfi_typeid_check.py`
+  compares the ids a new kernel accepts with a booted one; Neutron 24 and clang 12
+  agree on all 429 the vendor modules share.
+
+To build with the old compiler: `CLANG_VER=clang-r416183b ./fetch-toolchain.sh`, then
+`CLANG_DIR=$PWD/toolchain/clang-r416183b ./build.sh …`.
+
 Layout: `build.sh` (build + KMI gate), `package.sh` (boot.img + zip),
 `extract-config.sh` (base config from boot.img), `device.conf` (per-device config),
 `sources.lock` (pinned out-of-tree commit set — see below),
-`apply-ksunext-susfs.sh` + `patches/ksunext-static.patch` (KernelSU-Next v3.3.0
+`fetch-toolchain.sh` (Neutron clang, sha256-pinned),
+`apply-ksunext-susfs.sh` + `patches/ksunext-static.patch` (KernelSU-Next
 Wild + SusFS), `apply-kowsu.sh` (KoWSU), `apply-bore.sh` +
 `patches/bore-5.10-kmi.patch` (BORE, applied to every variant), `apply-ntsync.sh` +
 `patches/ntsync-5.10.patch` (ntsync, applied to every variant), `apply-reflex.sh` +
-`patches/cpufreq_reflex.c` (reflex governor, applied to every variant), `lib/kmi_check.py`
-(the 198-module cross-check), `config/*.fragment`, `anykernel/` (bundled
+`patches/cpufreq_reflex.c` (reflex governor, applied to every variant), `apply-rs4.sh` +
+`patches/rs4/` (the rs4 set, every variant), `lib/kmi_check.py` + `kmi-unresolved.baseline`
+(the 198-module cross-check), `lib/cfi_typeid_check.py` (CFI type ids after a compiler
+change), `config/*.fragment`, `anykernel/` (bundled
 AnyKernel3). The root-variant sources are **SHA-pinned in `sources.lock`** (the KSU
 side, SusFS, and KoWSU commits) and checked out into `.build/wildksu`,
 `.build/susfs-wild`, `.build/kowsu-ksu`; the build verifies the reported KSU version
@@ -208,5 +245,6 @@ Standing on other people's work:
 - **simonpunk** — SusFS · **tiann** — original KernelSU · **osm0sis** — AnyKernel3
 - **KOWX712** — KoWSU · **firelzrd** — BORE scheduler + reflex CPUFreq governor
 - **Elizabeth Figura / CodeWeavers** — the ntsync driver (mainline)
+- **Neutron-Toolchains** — Neutron clang
 
 Bug reports welcome — bring logs.
