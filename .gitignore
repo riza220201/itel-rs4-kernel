@@ -9,6 +9,9 @@ toolchain/
 *.zip
 *.png
 Screenshot*
+*.mp4
+*.mkv
+*.webm
 *.log
 
 # stock firmware boot.img — device-specific OEM firmware, kept local (drop your
