@@ -48,7 +48,7 @@ KERNEL_SRC="${KERNEL_SRC:-$PROJ/common}"                    # Google GKI android
 STOCK_CONFIG="${STOCK_CONFIG:-$PROJ/.build/ikconfig/stock.config}"  # from ./extract-config.sh (device's boot.img)
 BOOT_IMG="${BOOT_IMG:-$PROJ/boot.img}"                      # stock boot.img (local, git-ignored)
 VENDOR_KO_DIR="${VENDOR_KO_DIR:-$PROJ/.build/vendor_dlkm}"  # optional; local stock vendor_dlkm/*.ko for the full CRC gate
-CLANG_DIR="${CLANG_DIR:-$PROJ/toolchain/clang-r416183b}"    # local (git-ignored; fetch-toolchain.sh)
+CLANG_DIR="${CLANG_DIR:-$PROJ/toolchain/neutron-clang-06092026}"  # Neutron clang 24 since v9 (git-ignored; fetch-toolchain.sh); clang-12 = toolchain/clang-r416183b
 BUILD_TOOLS="${BUILD_TOOLS:-$PROJ/toolchain/build/build-tools/path/linux-x86}"  # optional (host tools if absent)
 
 # ── Device identity (device.conf > env > defaults) — branding + packaging ───────
@@ -78,6 +78,9 @@ case "$VARIANT" in
 esac
 
 KOUT="${KOUT:-$PROJ/.build/out-$VARIANT}"
+# Publish dir; override (with KOUT) to keep an experimental build, e.g. another
+# toolchain via CLANG_DIR=, away from the release artifacts in out/<variant>/.
+PUB_DIR="${PUB_DIR:-$PROJ/out/$VARIANT}"
 LOG="$PROJ/.build/logs/build-$VARIANT-$(date +%Y%m%d-%H%M%S).log"
 # Reproducibility: the kernel maps the source tree out of embedded paths but NOT the
 # O= out-dir, so an out-of-tree build leaks the absolute objtree path into vmlinux
@@ -146,14 +149,14 @@ ok "device: KMI target module_layout = $MODULE_LAYOUT (from $(basename "$DEVICE_
   Run ./extract-config.sh first — it extracts the base config from your stock boot.img."
 [[ -x "$CLANG_DIR/bin/clang" ]] || die "clang missing: $CLANG_DIR/bin/clang"
 grep -q '^CONFIG_CFI_CLANG=y' "$STOCK_CONFIG" || die "stock config lacks CFI_CLANG — wrong config, KMI would break"
-ok "kernel $(awk '/^VERSION/{v=$3}/^PATCHLEVEL/{p=$3}/^SUBLEVEL/{s=$3}END{print v"."p"."s}' "$KERNEL_SRC/Makefile") @ $(git -C "$KERNEL_SRC" rev-parse --short HEAD 2>/dev/null)   clang $("$CLANG_DIR/bin/clang" --version | awk 'NR==1{print $NF}')"
+ok "kernel $(awk '/^VERSION/{v=$3}/^PATCHLEVEL/{p=$3}/^SUBLEVEL/{s=$3}END{print v"."p"."s}' "$KERNEL_SRC/Makefile") @ $(git -C "$KERNEL_SRC" rev-parse --short HEAD 2>/dev/null)   clang $("$CLANG_DIR/bin/clang" --version | sed -n '1s/.*clang version \([^ ]*\).*/\1/p') ($(basename "$CLANG_DIR"))"
 # Memory advisory: the full-LTO vmlinux link is the RAM peak here (it near-OOM'd at
 # 14 GB once — the fix was more swap). Warn if RAM+swap looks tight; not a hard stop.
 _memkb="$(awk '/^(MemTotal|SwapTotal):/{s+=$2}END{print s}' /proc/meminfo 2>/dev/null || echo 0)"
 if (( _memkb > 0 && _memkb < 24*1024*1024 )); then
   warn "RAM+swap ≈ $(( _memkb/1024/1024 )) GB — the LTO link may OOM; add swap or lower parallelism (JOBS=$(( NPROC>4 ? NPROC/2 : NPROC )) ./build.sh …)"
 fi
-mkdir -p "$KOUT" "$(dirname "$LOG")" "$PROJ/out/$VARIANT"
+mkdir -p "$KOUT" "$(dirname "$LOG")" "$PUB_DIR"
 
 # ── Source prep (KSU/SusFS for the ksunext variant; git-revert on exit) ─────────
 SOURCE_DIRTY=0
@@ -205,6 +208,21 @@ prepare_source() {
   [[ -x "$PROJ/apply-rs4.sh" ]] || die "apply-rs4.sh missing — rs4 set not staged yet"
   KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-rs4.sh"
   ok "rs4 set applied"
+  # Stack-protector guard — pinned for EVERY variant and every compiler. The stock
+  # kernel (clang-12) uses the GLOBAL guard and exports __stack_chk_guard, which 166
+  # of the 198 vendor modules import. A compiler that can do
+  # -mstack-protector-guard=sysreg (clang >= 14) turns STACKPROTECTOR_PER_TASK on by
+  # itself (def_bool, no prompt, so no fragment can say no) and the export is gone:
+  # "Unknown symbol" for all 166, nothing boots. Under clang-12 this changes nothing.
+  step "Pinning the global stack-protector guard (KMI: vendor modules import __stack_chk_guard)"
+  # (the build-tools on PATH bring toybox grep: no -P/-z, so read the stanza with awk)
+  local ak="$KERNEL_SRC/arch/arm64/Kconfig" dep=$'\tdepends on STACKPROTECTOR && CC_HAVE_STACKPROTECTOR_SYSREG'
+  stanza() { awk '/^config STACKPROTECTOR_PER_TASK$/{f=1;next} f{print;if(++n==2)exit}' "$ak"; }
+  [[ "$(stanza)" == $'\tdef_bool y\n'"$dep" ]] \
+    || die "arch/arm64/Kconfig: the STACKPROTECTOR_PER_TASK stanza changed — re-check the stack-guard pin"
+  sed -i $'/^config STACKPROTECTOR_PER_TASK$/{n;s/^\tdef_bool y$/\tdef_bool n/;}' "$ak"
+  [[ "$(stanza)" == $'\tdef_bool n\n'"$dep" ]] || die "stack-guard pin did not apply"
+  ok "STACKPROTECTOR_PER_TASK pinned off (global __stack_chk_guard, like stock)"
   case "$VARIANT" in
     kowsu)
       step "Integrating KoWSU (KOWX712) standalone (apply-kowsu.sh)"
@@ -256,6 +274,9 @@ EOF
   for must in CONFIG_CFI_CLANG=y CONFIG_LTO_CLANG_FULL=y CONFIG_MODVERSIONS=y; do
     grep -q "^$must" "$KOUT/.config" || die "config invariant missing: $must — KMI would break"
   done
+  if grep -q '^CONFIG_STACKPROTECTOR_PER_TASK=y' "$KOUT/.config"; then
+    die "CONFIG_STACKPROTECTOR_PER_TASK=y — drops the __stack_chk_guard export the vendor modules import, KMI would break"
+  fi
   # rs4 set: a Kconfig dependency that fails after olddefconfig drops the option
   # SILENTLY — the build would pass and ship without the feature.
   for must in CONFIG_CPU_FREQ_LIMIT=y CONFIG_RS4_BALANCE=y CONFIG_RS4_PASS_THROUGH=y \
@@ -307,8 +328,8 @@ kmi_gate() {
 
 # ── Publish Image artifacts ────────────────────────────────────────────────────
 publish() {
-  hdr "Publish → out/$VARIANT/"
-  local o="$PROJ/out/$VARIANT"
+  hdr "Publish → ${PUB_DIR#$PROJ/}/"
+  local o="$PUB_DIR"
   cp "$KOUT/arch/arm64/boot/Image"     "$o/Image"
   cp "$KOUT/arch/arm64/boot/Image.gz"  "$o/Image.gz"
   cp "$KOUT/arch/arm64/boot/Image.lz4" "$o/Image.lz4"
@@ -324,7 +345,7 @@ publish() {
 package() {
   [[ "$PACK" == 1 ]] || return 0
   if [[ -x "$PROJ/package.sh" ]]; then
-    VARIANT="$VARIANT" PROJ="$PROJ" BOOT_IMG="$BOOT_IMG" \
+    VARIANT="$VARIANT" PROJ="$PROJ" BOOT_IMG="$BOOT_IMG" KOUT="$KOUT" PUB_DIR="$PUB_DIR" \
       DEVICE_LABEL="$DEVICE_LABEL" DEVICE_SOC="$DEVICE_SOC" DEVICE_NAMES="$DEVICE_NAMES" \
       KERNEL_FMT="$KERNEL_FMT" MODULE_LAYOUT="$MODULE_LAYOUT" BRAND="$BRAND" \
       "$PROJ/package.sh"

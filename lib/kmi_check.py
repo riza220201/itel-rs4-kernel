@@ -25,9 +25,27 @@ Every reference module must then carry that vermagic prefix, except the named
 files (modules you build yourself and therefore expect to differ). Anything else
 is a wrong reference set and exits 3. Leave KMI_EXPECT_VERMAGIC unset to keep
 the old CRC-only behaviour.
+
+🔴 A CRC GATE CANNOT SEE AN EXPORT THAT IS GONE.
+A symbol a vendor module imports but our vmlinux does not export used to be
+counted as "inter-vendor, resolved at load" and passed. On 2026-10-28 a clang-24
+build turned on STACKPROTECTOR_PER_TASK (def_bool once the compiler can do
+it), which drops the export of __stack_chk_guard — imported by 166 of the 198
+reference modules — and this gate still said CLEAN. The modules would have
+failed with "Unknown symbol" and nothing would boot.
+
+Not every such symbol is a loss: modules also import from modules outside the
+reference set (vendor_boot: cfg80211, aee, ...). So the names that neither our
+vmlinux nor the reference set provides are compared to a BASELINE taken from a
+build that booted. Set in device.conf:
+
+    export KMI_UNRESOLVED_BASELINE="$PROJ/kmi-unresolved.baseline"
+
+Any name outside the baseline is an export our kernel lost and exits 4.
 """
 import sys, struct, glob, os
 from elftools.elf.elffile import ELFFile
+from elftools.elf.sections import SymbolTableSection
 
 if len(sys.argv) != 3:
     sys.exit("usage: kmi_check.py <vmlinux.symvers> <vendor_ko_dir>")
@@ -55,10 +73,17 @@ def vermagic_of(path):
 tot = match = mism = missing = ml_ok = ml_bad = 0
 examples = []
 vermagics = {}
+provided = set()                                  # names the reference modules export
+wanted_by = {}                                    # not-in-vmlinux name -> importing modules
 kos = sorted(glob.glob(os.path.join(ko_dir, '*.ko')))
 for ko in kos:
     vermagics.setdefault(vermagic_of(ko).split(' ')[0], []).append(os.path.basename(ko))
-    sec = ELFFile(open(ko, 'rb')).get_section_by_name('__versions')
+    elf = ELFFile(open(ko, 'rb'))
+    for st in elf.iter_sections():
+        if isinstance(st, SymbolTableSection):
+            provided.update(s.name[len('__ksymtab_'):] for s in st.iter_symbols()
+                            if s.name.startswith('__ksymtab_'))
+    sec = elf.get_section_by_name('__versions')
     if not sec:
         continue
     d = sec.data()
@@ -83,7 +108,10 @@ for ko in kos:
                 elif len(examples) < 15:
                     examples.append((nm, hex(crc), hex(sv[nm])))
         else:
-            missing += 1                          # inter-vendor symbol, resolved at load
+            missing += 1                          # another module's export (checked below)
+            wanted_by.setdefault(nm, []).append(os.path.basename(ko))
+
+unresolved = {n: m for n, m in wanted_by.items() if n not in provided}
 
 print(f"reference set   : {ko_dir}")
 print(f"modules checked : {len(kos)}")
@@ -94,7 +122,8 @@ print("vermagic        : " + ("  ".join(f"{len(v)}x {k or '(none)'}"
 print(f"symbol refs     : {tot}")
 print(f"  MATCH         : {match}")
 print(f"  CRC-MISMATCH  : {mism}")
-print(f"  not-in-vmlinux: {missing}  (inter-vendor, resolved at load — expected)")
+print(f"  not-in-vmlinux: {missing}  ({len(wanted_by)} names: {len(wanted_by)-len(unresolved)} "
+      f"exported by the reference set, {len(unresolved)} by neither)")
 print(f"module_layout   : ok={ml_ok} bad={ml_bad}")
 if examples:
     print("sample mismatches (name, module-wants, our-vmlinux):")
@@ -127,6 +156,33 @@ if expect:
     print(f"provenance      : ok — {len(kos)-len(excused)} carry '{expect}'"
           + (f"; {len(excused)} declared exception(s): {', '.join(excused)}" if excused else ""))
 
+# ── Exports lost vs a build that booted (opt-in) ──────────────────────────────
+baseline_path = os.environ.get('KMI_UNRESOLVED_BASELINE', '').strip()
+lost = []
+if baseline_path:
+    try:
+        with open(baseline_path) as f:
+            baseline = {ln.strip() for ln in f if ln.strip() and not ln.startswith('#')}
+    except OSError as e:
+        print(f"RESULT: KMI_UNRESOLVED_BASELINE unreadable ({e}). NOT a pass.")
+        sys.exit(2)
+    lost = sorted(set(unresolved) - baseline)
+    if lost:
+        print(f"lost exports    : {len(lost)} name(s) the reference modules import, exported by "
+              f"neither our vmlinux nor the set, NOT in the baseline (would fail: Unknown symbol):")
+        for n in lost[:15]:
+            print(f"    {n}  <- {len(unresolved[n])} modules, e.g. {unresolved[n][0]}")
+        if len(lost) > 15:
+            print(f"    … and {len(lost)-15} more")
+    else:
+        print(f"lost exports    : none — all {len(unresolved)} unprovided names are in the baseline "
+              f"({os.path.basename(baseline_path)}, {len(baseline)})")
+else:
+    print("lost exports    : unchecked (KMI_UNRESOLVED_BASELINE not set)")
+
+if mism == 0 and lost:
+    print(f"RESULT: {len(lost)} vendor-imported export(s) missing — KMI BROKEN, do NOT ship")
+    sys.exit(4)
 if mism == 0:
     print("RESULT: CLEAN — all vendor modules load natively (KMI-safe to ship)")
     sys.exit(0)

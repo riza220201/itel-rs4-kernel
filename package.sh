@@ -46,7 +46,7 @@ BRAND="${BRAND:-Riza}"
 DEVSLUG="$(echo "$DEVICE_LABEL" | tr -cd '[:alnum:]')"   # release-file prefix (e.g. ItelRS4)
 
 BOOT_IMG="${BOOT_IMG:-$PROJ/boot.img}"      # stock boot.img (local, git-ignored)
-O="$PROJ/out/$VARIANT"
+O="${PUB_DIR:-$PROJ/out/$VARIANT}"           # publish dir (build.sh passes its PUB_DIR)
 die() { echo "✗ $*" >&2; exit 1; }
 
 # Stock boot.img kernel format → which built artifact we swap in. magiskboot detects
@@ -85,6 +85,12 @@ SUSFS_VER="$(sed -n 's/.*#define SUSFS_VERSION[[:space:]]*"\(v[0-9.]*\)".*/\1/p'
               "$PROJ/.build/susfs-wild/kernel_patches/include/linux/susfs.h" 2>/dev/null \
              | head -1 || true)"
 [[ -n "$SUSFS_VER" ]] || SUSFS_VER="unknown"
+
+# Compiler: read from the build (compile.h), like KREL — "Neutron clang 24.0.0git",
+# "Android clang 12.0.5". Testers compare kernels by it; a hardcoded one goes stale.
+COMPILER="$(sed -n 's/.*LINUX_COMPILER "\([^(]*\)\(([^)]*) \)\{0,1\}clang version \([^ ]*\).*/\1clang \3/p' \
+             "$KOUT/include/generated/compile.h" 2>/dev/null | head -1 || true)"
+[[ -n "$COMPILER" ]] || COMPILER="unknown"
 
 case "$VARIANT" in
   vanilla) LABEL="Vanilla"
@@ -166,6 +172,7 @@ ui_print "   ══════════════════════�
 ui_print " ";
 ui_print "     variant : $LABEL";
 ui_print "     version : $KREL";
+ui_print "     compiler: $COMPILER";
 ui_print " ";
 ui_print "   ────────────────────────────────────────────";
 ui_print "   [+] vendor modules load native (module_layout";

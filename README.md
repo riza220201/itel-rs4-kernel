@@ -105,7 +105,7 @@ the Clang toolchain (1.4 G, git-ignored — not vendored):
 git clone --recursive https://github.com/riza220201/itel-rs4-kernel
 # already cloned? →  git submodule update --init --depth 1 common
 # bump to the latest LTS tip →  git submodule update --remote --depth 1 common
-./fetch-toolchain.sh          # pulls clang-r416183b into ./toolchain/
+./fetch-toolchain.sh          # pulls Neutron clang 24 (sha256-pinned) into ./toolchain/
 # drop your device's stock boot.img at ./boot.img, then:
 ./extract-config.sh           # extracts the base config from boot.img → .build/ikconfig/
 ./build.sh <vanilla|kowsu|ksunext> [--pack]
