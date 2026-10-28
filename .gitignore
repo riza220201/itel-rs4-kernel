@@ -18,10 +18,12 @@ Screenshot*
 # AnyKernel3 vendored copy keeps its files but not its git metadata
 anykernel/.git/
 
-# personal notes / release drafts (kept local)
-JOURNAL.md
-RESUME.md
-TELEGRAM-POST*.md
+# personal notes, plans, release drafts and release scripts (kept local):
+# every .md except the READMEs (JOURNAL, RESUME, PLAN, TELEGRAM-POST*, ...)
+*.md
+!README.md
+release-*.sh
+recreate-releases.sh
 
 # local backups + python caches
 backup/
