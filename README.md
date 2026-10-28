@@ -87,7 +87,7 @@ It's A/B (Virtual A/B).
 - **AnyKernel3 zip** — flash in OrangeFox, works on any ROM. Reads the boot.img on
   your active slot, swaps in the kernel, keeps your ramdisk. `IS_SLOT_DEVICE=auto`
   (don't force it — that's what throws "unable to determine slot").
-- **Prebuilt `boot.img`** — stock firmware only (it carries the stock ramdisk).
+- **Prebuilt `boot.img`** — RS4 stock firmware only (it carries the RS4's stock ramdisk).
   Write to `boot_a`/`boot_b` with antumbra. Don't use on a custom ROM.
 
 Keep your current/stock `boot.img` around to restore — flashing only touches the
@@ -109,6 +109,21 @@ Install *that* manager — a mismatched/older one shows "Not installed" (KernelS
 binds a manager it pairs with, not merely "≥"). This tracks KOWX712's fast-moving
 `master`; if a newer manager stops binding, the kernel needs re-bumping to match
 (open an issue).
+
+### Other MT6789 phones
+
+Testers report these kernels booting on other phones built on MT6789 (Helio G99 /
+G100 / G200 variants) that run a 5.10 kernel — Infinix, Advan and Inoi among them —
+because their vendor modules expect the same kernel ABI (`module_layout 0x7c24b32d`).
+I only test on the RS4, and the KMI gate checks the RS4's own 198 modules, so on
+another phone you're the tester:
+
+- flash **only the AnyKernel3 zip** (it swaps just the kernel). Never the prebuilt
+  `boot.img`: it carries the RS4's stock ramdisk.
+- keep a backup of your own boot image.
+- the RS4 extras (bypass charging, double tap to wake) stay off without the RS4's
+  charger and touch drivers; the balanced boost and the screen-off cap apply on any
+  phone.
 
 ## Building it yourself
 
