@@ -181,6 +181,7 @@ ui_print "   [+] sched   : BORE default-on (sysctl kernel.sched_bore)";
 ui_print "   [+] network : BBR · fq/cake · WireGuard · TTL/HL";
 ui_print "   [+] storage : BFQ/Kyber · all governors";
 ui_print "   [+] memory  : zstd/lz4/lzo-rle  (zram: load as module)";
+ui_print "   [+] compat  : epoll_pwait2 (Android 16) · ntsync (Wine)";
 $ROOTLINE;
 ui_print "   ────────────────────────────────────────────";
 ui_print " ";

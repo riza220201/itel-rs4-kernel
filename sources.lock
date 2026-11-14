@@ -12,20 +12,20 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── kernel source + toolchain (informational; enforced elsewhere) ───────────────
-KERNEL_COMMON="8059ae219630120955ce6281668ffa709fd87521"   # common submodule — GKI android12-5.10-lts @ 5.10.272 (2026-10-24; .269 f5a30e5a is an ancestor, +1,447 commits)
+KERNEL_COMMON="694b971462ebbf56801d9254362df6552e09c68f"   # common submodule — GKI android12-5.10-lts @ 5.10.272 (2026-11-10; v9's 8059ae21 is an ancestor, +34 commits). v10 adds epoll_pwait2 on top (patches/, every variant)
 CLANG_VER="neutron-clang-06092026"                          # Neutron clang 24.0.0git, llvm f42c87ba (fetch-toolchain.sh; sha256-pinned). Since v9; was clang-r416183b (AOSP clang 12.0.5, MTK stock) — any clang >= 14 needs build.sh's stack-guard pin
 
-# ── ksunext variant: KernelSU-Next v3.4.2 "Wild" (dev-susfs) + SusFS v2.3.0 ──────
+# ── ksunext variant: KernelSU-Next "Wild" (dev-susfs, v3.4.2 + 148 dev) + SusFS v2.4.0 ──
 # WILDKSU_REF is the EXACT commit the driver is built from (was the moving `dev-susfs`
 # branch — that drift was the whole point of pinning). WILDKSU_VERBASE is the version
 # anchor: 30000 + rev-count(VERBASE) is the KSU version the kernel reports, which the
 # manager APK must be >=. apply-ksunext-susfs.sh recomputes it and DIES on any drift
 # from WILDKSU_VER_EXPECT, so the reported version and the installer banner can't
 # disagree (that was a latent bug).
-WILDKSU_REF="d21e0a66c887ae4bc75b7c9f83e41761819ec09a"       # pershoot/KernelSU-Next dev-susfs @ this commit (2026-10-19; v3.4.2 + 50 upstream dev = b427a3f9 + 13 Wild: 9 Wild + 4 Samsung KDP/RKP/DEFEX compat, inert off Samsung DTs). dev-susfs was REBASED again: v8's a0dfdb86 is on no branch; both kept as local branches rs4-pin-v8 / rs4-pin-20261028
-WILDKSU_VERBASE="b427a3f9c2421a443f961007bfce66b25486643f"   # merge-base w/ dev (= upstream KernelSU-Next dev head 2026-10-19, = what Wild's own Kbuild counts); v3.4.2 (4c706b59) is its ancestor
-WILDKSU_VER_EXPECT="33405"                                   # 30000 + rev-count(WILDKSU_VERBASE); must match at build
-SUSFS_REF="0cd7353436d2817785ae449109ea08d633ee6bb2"         # simonpunk gki-android12-5.10 @ eb95da08 (2026-10-27, SusFS v2.3.0, +13: UAF/selinux-leak fixes, priority uid filter) + our 2 picks rebased clean; local branch rs4-susfs-20261028 in .build/susfs-wild
+WILDKSU_REF="54f1011f9f1c8d8e31df47995243d6551fb1a93b"       # pershoot/KernelSU-Next dev-susfs @ this commit (2026-11-14; upstream dev 7ccf6147 + 13 Wild, "susfs (v2.4.0): Introduce SuSFS"). Rebased again: v9's d21e0a66 is on no branch. Local branches rs4-pin-v8 / rs4-pin-20261028 / rs4-pin-20261114
+WILDKSU_VERBASE="7ccf61479621f240c0d968ef46f1b167b6ceb500"   # merge-base w/ dev (= upstream KernelSU-Next dev head 2026-11-14 "Add LSM hook for inode_setxattr"); v3.4.2 is its ancestor; KSU uapi still 6. Manager = KernelSU-Next CI "Build Manager" run 43601257081 (this commit)
+WILDKSU_VER_EXPECT="33553"                                   # 30000 + rev-count(WILDKSU_VERBASE); must match at build
+SUSFS_REF="36c017ec39f1dc2156607f0ffcf329c13e0137a1"         # simonpunk gki-android12-5.10 @ 5436438 (2026-11-09, SusFS v2.4.0) + simonpunk 342943d core files (sus_path_uid_filter, 6.1-only on 11-14; the Wild driver calls it) + pershoot's 3 picks (no-features core, Toolkit coexistence, priority-UID-filter enhance) + ours: keep susfs_get_data_path (342943d dropped it; the 5.10 readdir hooks call it). fs/susfs.c + headers == pershoot gki-android14-6.1-dev 2b2118a plus that helper. Not in: 6.1-only selinux_hide hook fix e6dc76f. Local branch rs4-susfs-20261114
 
 # ── kowsu variant: KOWX712/KernelSU standalone (own hiding, no SusFS) ────────────
 # Pin to a CURRENT KOWX712 master commit so the kernel version matches the manager
@@ -34,5 +34,5 @@ SUSFS_REF="0cd7353436d2817785ae449109ea08d633ee6bb2"         # simonpunk gki-and
 # users got "Not installed" (reported on v2). This commit == the manager build
 # `v3.2.5-54-gcfac3be3` (32579) — kernel + manager from the SAME source commit.
 # RE-BUMP when KOWX712 moves master and the distributed manager moves with it.
-KOWSU_REF="6366f25b89f2bc5e287c1983715ebae60cd5540e"         # KOWX712/KernelSU master 2026-10-25 "manager: translation squash" (v3.3.0-136-g6366f25b; master FORCE-PUSHED again over 024d5f4a (32712); = KOWX712's newest manager CI build, run 455; local branch rs4-pin-20261028)
-KOWSU_VER_EXPECT="32737"                                     # 30000 + rev-count(KOWSU_REF); manager must match this
+KOWSU_REF="d4873310a2738c4c5726a804ed58f1b473799a92"         # KOWX712/KernelSU master 2026-11-14 "manager: translation squash" (master FORCE-PUSHED again over v9's 6366f25b; = KOWX712's manager CI run #459 43606808440; local branches rs4-pin-20261028 / rs4-pin-20261114)
+KOWSU_VER_EXPECT="32761"                                     # 30000 + rev-count(KOWSU_REF); manager must match this

@@ -23,7 +23,7 @@ zero force-load, and it boots stock or custom ROMs the same.
 
 | variant | what | `uname -r` |
 |---|---|---|
-| **vanilla** | performance + network + BORE + reflex + ntsync + rs4 set, no root | `5.10.272-Riza-vanilla` |
+| **vanilla** | performance + network + BORE + reflex + ntsync + epoll_pwait2 + rs4 set, no root | `5.10.272-Riza-vanilla` |
 | **ksunext** | vanilla + KernelSU-Next + SusFS | `5.10.272-Riza-ksunext` |
 | **kowsu** | vanilla + KoWSU (own hiding, no SusFS) | `5.10.272-Riza-kowsu` |
 
@@ -51,6 +51,13 @@ kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`*
   under emulation. A self-contained leaf misc driver (KMI-inert). Note: exposing
   the node to apps needs a **ROM sepolicy** rule for `/dev/ntsync`, and a Winlator
   build that uses the ntsync backend — the kernel just provides the node.
+- compat — **epoll_pwait2** (syscall 441, Linux 5.11), backported from mainline for
+  **Android 16 ROMs**: A16's libgui waits for buffer releases with `epoll_pwait2` and
+  has no fallback, so on a stock 5.10 kernel every such wait fails with ENOSYS and
+  retries at once — a live wallpaper alone burned ~46 % of a core. Mainline's four
+  commits (timespec64 timeouts, the syscall, the arm64 + compat wiring); no exported
+  symbol or struct changes (KMI-inert), and the build checks both entry points made it
+  into the kernel. `test/epoll_pwait2/` has a no-libc test for arm64 and 32-bit apps.
 - net — TCP BBR (default) + fq / fq_codel / CAKE + WireGuard + TTL/HL targets
   (normalize TTL for tethering)
 - storage — BFQ + Kyber I/O schedulers, all CPU governors
@@ -66,7 +73,7 @@ kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`*
   `/sys/board_info` (About phone's processor line). Plus a balanced boot/touch
   boost with a screen-off cap, `none` as the default I/O scheduler, and DS4-clone
   controller support in `hid-sony`. All new, self-contained code (KMI-inert).
-- **ksunext** — KernelSU-Next **v3.4.2+ (33405)** + SusFS **v2.3.0** (root + full hiding)
+- **ksunext** — KernelSU-Next **v3.4.2+ (33553)** + SusFS **v2.4.0** (root + full hiding)
 - **kowsu** — KoWSU (KOWX712 KernelSU), a lean KernelSU-Next fork with its own
   kernel-side hiding (per-app umount + selinux hide). No SusFS — KoWSU's tree is
   restructured and SusFS doesn't target it, so this is the standalone build.
@@ -93,18 +100,18 @@ It's A/B (Virtual A/B).
 Keep your current/stock `boot.img` around to restore — flashing only touches the
 kernel, so a bad flash is boot-only and easy to recover.
 
-**ksunext build:** the kernel reports KernelSU version **33405** and speaks KSU
+**ksunext build:** the kernel reports KernelSU version **33553** and speaks KSU
 **uapi 6**. No KernelSU-Next *release* has uapi 6 yet (v3.4.2 is uapi 5): a
 release `ksud`/manager logs "UAPI version mismatch" and skips its boot stages, so
 **no modules load**. Install the manager from KernelSU-Next's own CI build of the same commit
-(`v3.4.2-50-gb427a3f9`, versionCode 33405, signed with the official key):
-[manager.zip](https://nightly.link/KernelSU-Next/KernelSU-Next/actions/runs/39297115788/manager.zip)
+(`v3.4.2-198-g7ccf6147`, versionCode 33553, signed with the official key):
+[manager.zip](https://nightly.link/KernelSU-Next/KernelSU-Next/actions/runs/43601257081/manager.zip)
 (or `manager-spoofed.zip` from the same run). Uninstall the old manager first, then
 reboot once after installing.
 
-**kowsu build:** the kernel reports KoWSU version **32737** and pairs with the
+**kowsu build:** the kernel reports KoWSU version **32761** and pairs with the
 **matching** [KOWX712/KernelSU](https://github.com/KOWX712/KernelSU) manager: the
-CI build of commit `6366f25b` (`v3.3.0-136`, run #455 in KOWX712's Actions).
+CI build of commit `d4873310` (`v3.3.0-160`, run #459 in KOWX712's Actions).
 Install *that* manager — a mismatched/older one shows "Not installed" (KernelSU only
 binds a manager it pairs with, not merely "≥"). This tracks KOWX712's fast-moving
 `master`; if a newer manager stops binding, the kernel needs re-bumping to match
@@ -219,7 +226,9 @@ Layout: `build.sh` (build + KMI gate), `package.sh` (boot.img + zip),
 `apply-ksunext-susfs.sh` + `patches/ksunext-static.patch` (KernelSU-Next
 Wild + SusFS), `apply-kowsu.sh` (KoWSU), `apply-bore.sh` +
 `patches/bore-5.10-kmi.patch` (BORE, applied to every variant), `apply-ntsync.sh` +
-`patches/ntsync-5.10.patch` (ntsync, applied to every variant), `apply-reflex.sh` +
+`patches/ntsync-5.10.patch` (ntsync, applied to every variant), `apply-epoll-pwait2.sh` +
+`patches/epoll_pwait2-5.10.patch` (epoll_pwait2, every variant; test in
+`test/epoll_pwait2/`), `apply-reflex.sh` +
 `patches/cpufreq_reflex.c` (reflex governor, applied to every variant), `apply-rs4.sh` +
 `patches/rs4/` (the rs4 set, every variant), `lib/kmi_check.py` + `kmi-unresolved.baseline`
 (the 198-module cross-check), `lib/cfi_typeid_check.py` (CFI type ids after a compiler
@@ -259,7 +268,8 @@ Standing on other people's work:
   **WildKernels** — the current KSU-Next + SusFS integration recipe
 - **simonpunk** — SusFS · **tiann** — original KernelSU · **osm0sis** — AnyKernel3
 - **KOWX712** — KoWSU · **firelzrd** — BORE scheduler + reflex CPUFreq governor
-- **Elizabeth Figura / CodeWeavers** — the ntsync driver (mainline)
+- **Elizabeth Figura / CodeWeavers** — the ntsync driver (mainline) ·
+  **Willem de Bruijn** — `epoll_pwait2` (mainline)
 - **Neutron-Toolchains** — Neutron clang
 
 Bug reports welcome — bring logs.

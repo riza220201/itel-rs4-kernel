@@ -5,7 +5,7 @@
 #   ./build.sh <variant>            build + KMI-gate + publish Image{,.gz,.lz4}
 #   ./build.sh <variant> --pack     also build AnyKernel3 zip + stock boot.img
 #
-#   variant = vanilla | kowsu | ksunext   (all carry BORE + ntsync + perf + network)
+#   variant = vanilla | kowsu | ksunext   (all carry BORE + ntsync + epoll_pwait2 + perf + network)
 #     vanilla  : stock config + performance + network + BORE (no root)
 #     kowsu    : vanilla + KoWSU (KOWX712/KernelSU) standalone, own hiding, no SusFS
 #     ksunext  : vanilla + KernelSU-Next "Wild" dev-susfs + SusFS (versions pinned in sources.lock)
@@ -129,7 +129,7 @@ export KBUILD_BUILD_TIMESTAMP="${KBUILD_BUILD_TIMESTAMP:-$(date -u -d "@$SRC_EPO
 # The AOSP build-tools ship a hermetic python3 (no pyelftools) that now shadows
 # PATH — pin a system python that actually has elftools for the KMI cross-check.
 SYSPY=""
-for p in /usr/bin/python3 /usr/local/bin/python3 python3; do
+for p in ${KMI_PYTHON:-} /usr/bin/python3 /usr/local/bin/python3 python3; do   # KMI_PYTHON= e.g. a venv's python3
   "$p" -c 'import elftools' 2>/dev/null && { SYSPY="$p"; break; }
 done
 [[ -n "$SYSPY" ]] || die "no python3 with pyelftools found (needed for KMI cross-check): pip install pyelftools"
@@ -194,6 +194,12 @@ prepare_source() {
   [[ -x "$PROJ/apply-ntsync.sh" ]] || die "apply-ntsync.sh missing — ntsync not staged yet"
   KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-ntsync.sh"
   ok "ntsync applied"
+  # epoll_pwait2 (syscall 441, Linux 5.11) — applied to EVERY variant. Android 16 libgui
+  # calls it with no fallback; on 5.10 the ENOSYS spins BLASTBufferQueue (KMI-inert).
+  step "Applying epoll_pwait2 backport (apply-epoll-pwait2.sh)"
+  [[ -x "$PROJ/apply-epoll-pwait2.sh" ]] || die "apply-epoll-pwait2.sh missing"
+  KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-epoll-pwait2.sh"
+  ok "epoll_pwait2 applied"
   # reflex CPUFreq governor — applied to EVERY variant (KMI-safe pure additions;
   # firelzrd/reflex backported to 5.10). The itel S666LN device tree selects
   # "reflex" as the scaling_governor (policy0 + policy6). See apply-reflex.sh.
@@ -305,6 +311,13 @@ build_kernel() {
   "${MK[@]}" -j"$NPROC" vmlinux Image.gz Image.lz4 modules 2>&1 | tee "$LOG" \
     || die "kernel build failed — see $LOG"
   ok "build finished"
+  # A feature that silently drops out still builds and boots: prove the syscall made it.
+  # (CFI may suffix the body .cfi and keep a jump-table entry under the plain name.)
+  for s in __arm64_sys_epoll_pwait2 __arm64_compat_sys_epoll_pwait2; do
+    awk -v s="$s" '$3==s || $3==s".cfi"{f=1} END{exit !f}' "$KOUT/System.map" \
+      || die "$s not in System.map — the epoll_pwait2 backport did not reach vmlinux"
+  done
+  ok "epoll_pwait2: native + compat entry points in vmlinux"
 }
 
 # ── KMI gate ───────────────────────────────────────────────────────────────────

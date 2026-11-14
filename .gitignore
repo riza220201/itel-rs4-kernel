@@ -37,3 +37,6 @@ logcat.txt
 
 # testers' DS4 captures (their controller + phone Bluetooth addresses): never publish
 test/ds4/*.txt
+
+# test binaries (rebuilt by test/*/build.sh)
+test/epoll_pwait2/ep2test-*
