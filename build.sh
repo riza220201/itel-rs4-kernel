@@ -5,7 +5,7 @@
 #   ./build.sh <variant>            build + KMI-gate + publish Image{,.gz,.lz4}
 #   ./build.sh <variant> --pack     also build AnyKernel3 zip + stock boot.img
 #
-#   variant = vanilla | kowsu | ksunext   (all carry BORE + ntsync + epoll_pwait2 + perf + network)
+#   variant = vanilla | kowsu | ksunext   (all carry BORE + ntsync + epoll_pwait2 + memory.reclaim + perf + network)
 #     vanilla  : stock config + performance + network + BORE (no root)
 #     kowsu    : vanilla + KoWSU (KOWX712/KernelSU) standalone, own hiding, no SusFS
 #     ksunext  : vanilla + KernelSU-Next "Wild" dev-susfs + SusFS (versions pinned in sources.lock)
@@ -200,6 +200,12 @@ prepare_source() {
   [[ -x "$PROJ/apply-epoll-pwait2.sh" ]] || die "apply-epoll-pwait2.sh missing"
   KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-epoll-pwait2.sh"
   ok "epoll_pwait2 applied"
+  # memory.reclaim (Linux 5.19) — applied to EVERY variant. Android 16's system compaction
+  # writes memory.current into it for every non-app process; 5.10 lacked it (KMI-inert).
+  step "Applying memory.reclaim backport (apply-memory-reclaim.sh)"
+  [[ -x "$PROJ/apply-memory-reclaim.sh" ]] || die "apply-memory-reclaim.sh missing"
+  KERNEL_SRC="$KERNEL_SRC" PROJ="$PROJ" "$PROJ/apply-memory-reclaim.sh"
+  ok "memory.reclaim applied"
   # reflex CPUFreq governor — applied to EVERY variant (KMI-safe pure additions;
   # firelzrd/reflex backported to 5.10). The itel S666LN device tree selects
   # "reflex" as the scaling_governor (policy0 + policy6). See apply-reflex.sh.
@@ -318,6 +324,9 @@ build_kernel() {
       || die "$s not in System.map — the epoll_pwait2 backport did not reach vmlinux"
   done
   ok "epoll_pwait2: native + compat entry points in vmlinux"
+  awk '$3=="memory_reclaim" || $3=="memory_reclaim.cfi"{f=1} END{exit !f}' "$KOUT/System.map" \
+    || die "memory_reclaim not in System.map — the memory.reclaim backport did not reach vmlinux"
+  ok "memory.reclaim: handler in vmlinux"
 }
 
 # ── KMI gate ───────────────────────────────────────────────────────────────────

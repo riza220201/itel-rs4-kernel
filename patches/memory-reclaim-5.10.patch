@@ -1,0 +1,122 @@
+memory.reclaim (proactive per-memcg reclaim) for 5.10 -- mainline 5.19 94968384dde1
+
+From mainline 94968384dde15d48263bfc59d280cd71b1259d8c (Shakeel Butt, 2022-04-29,
+"memcg: introduce per-memcg reclaim interface"), the mm/memcontrol.c part verbatim plus
+its cgroup-v2.rst section; applies to GKI android12-5.10-lts 694b9714 with line offsets
+only (no code change).
+
+WHY: Android 16's CachedAppOptimizer.compactSystem() (ActivityManagerService, 5 min after
+BOOT_COMPLETED; `am compact system`) applies the CompactFull task profile to every
+non-app process: libprocessgroup's CompactMemcgAction reads memory.current and writes it
+to memory.reclaim. 5.10 has no memory.reclaim, so A16's system compaction did nothing
+(91 "Could not write ... memory.reclaim: Permission denied" + the reads, every boot).
+Proven live on v10 with a module registering this exact handler (test/memory_reclaim):
+`am compact system` -> 0 refused writes (was 91), MemFree +190 MB, Cached -152 MB,
+65 MB of anon moved to zram; one daemon's memcg 924 KB -> 0.
+
+NOT TAKEN (on purpose):
+  73b73bac90d9 (vmpressure: proactive reclaim flag) and 68cd9050d871 (memory.reclaim
+  swappiness=) both change try_to_free_mem_cgroup_pages(), a KMI-exported symbol
+  (crc 0xbb15d792); 0388536ac291 and later batch tuning build on those. Without
+  swappiness=, A16's CompactAnon/CompactFile probe ("0 swappiness=0") gets -EINVAL and
+  app compaction keeps its process_madvise path -- unchanged from v10. This build's
+  use_memcg_for_compaction flag is off anyway; only compactSystem (CompactFull) uses it.
+
+KMI: a static handler and one entry in the static memory_files[] cftype array; no
+exported symbol, no struct change. build.sh checks memory_reclaim reached vmlinux.
+
+diff --git a/Documentation/admin-guide/cgroup-v2.rst b/Documentation/admin-guide/cgroup-v2.rst
+index 540ee6db5c48..bceb0e62f91f 100644
+--- a/Documentation/admin-guide/cgroup-v2.rst
++++ b/Documentation/admin-guide/cgroup-v2.rst
+@@ -1182,6 +1182,27 @@ PAGE_SIZE multiple when read back.
+ 	high limit is used and monitored properly, this limit's
+ 	utility is limited to providing the final safety net.
+ 
++  memory.reclaim
++	A write-only nested-keyed file which exists for all cgroups.
++
++	This is a simple interface to trigger memory reclaim in the
++	target cgroup.
++
++	This file accepts a single key, the number of bytes to reclaim.
++	No nested keys are currently supported.
++
++	Example::
++
++	  echo "1G" > memory.reclaim
++
++	The interface can be later extended with nested keys to
++	configure the reclaim behavior. For example, specify the
++	type of memory to reclaim from (anon, file, ..).
++
++	Please note that the kernel can over or under reclaim from
++	the target cgroup. If less bytes are reclaimed than the
++	specified amount, -EAGAIN is returned.
++
+   memory.oom.group
+ 	A read-write single value file which exists on non-root
+ 	cgroups.  The default value is "0".
+diff --git a/mm/memcontrol.c b/mm/memcontrol.c
+index 79bf8e52f174..5853cbbfb1f6 100644
+--- a/mm/memcontrol.c
++++ b/mm/memcontrol.c
+@@ -6590,6 +6590,46 @@ static ssize_t memory_oom_group_write(struct kernfs_open_file *of,
+ 	return nbytes;
+ }
+ 
++static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
++			      size_t nbytes, loff_t off)
++{
++	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
++	unsigned int nr_retries = MAX_RECLAIM_RETRIES;
++	unsigned long nr_to_reclaim, nr_reclaimed = 0;
++	int err;
++
++	buf = strstrip(buf);
++	err = page_counter_memparse(buf, "", &nr_to_reclaim);
++	if (err)
++		return err;
++
++	while (nr_reclaimed < nr_to_reclaim) {
++		unsigned long reclaimed;
++
++		if (signal_pending(current))
++			return -EINTR;
++
++		/*
++		 * This is the final attempt, drain percpu lru caches in the
++		 * hope of introducing more evictable pages for
++		 * try_to_free_mem_cgroup_pages().
++		 */
++		if (!nr_retries)
++			lru_add_drain_all();
++
++		reclaimed = try_to_free_mem_cgroup_pages(memcg,
++						nr_to_reclaim - nr_reclaimed,
++						GFP_KERNEL, true);
++
++		if (!reclaimed && !nr_retries--)
++			return -EAGAIN;
++
++		nr_reclaimed += reclaimed;
++	}
++
++	return nbytes;
++}
++
+ static struct cftype memory_files[] = {
+ 	{
+ 		.name = "current",
+@@ -6648,6 +6688,11 @@ static struct cftype memory_files[] = {
+ 		.seq_show = memory_oom_group_show,
+ 		.write = memory_oom_group_write,
+ 	},
++	{
++		.name = "reclaim",
++		.flags = CFTYPE_NS_DELEGATABLE,
++		.write = memory_reclaim,
++	},
+ 	{ }	/* terminate */
+ };
+ 

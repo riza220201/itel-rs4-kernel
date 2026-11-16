@@ -23,7 +23,7 @@ zero force-load, and it boots stock or custom ROMs the same.
 
 | variant | what | `uname -r` |
 |---|---|---|
-| **vanilla** | performance + network + BORE + reflex + ntsync + epoll_pwait2 + rs4 set, no root | `5.10.272-Riza-vanilla` |
+| **vanilla** | performance + network + BORE + reflex + ntsync + epoll_pwait2 + memory.reclaim + rs4 set, no root | `5.10.272-Riza-vanilla` |
 | **ksunext** | vanilla + KernelSU-Next + SusFS | `5.10.272-Riza-ksunext` |
 | **kowsu** | vanilla + KoWSU (own hiding, no SusFS) | `5.10.272-Riza-kowsu` |
 
@@ -58,6 +58,15 @@ kernel, keeps your ROM's ramdisk, works on any ROM) and a **prebuilt `boot.img`*
   commits (timespec64 timeouts, the syscall, the arm64 + compat wiring); no exported
   symbol or struct changes (KMI-inert), and the build checks both entry points made it
   into the kernel. `test/epoll_pwait2/` has a no-libc test for arm64 and 32-bit apps.
+- compat — **memory.reclaim** (cgroup v2, Linux 5.19), backported from mainline for
+  **Android 16 ROMs**: five minutes after boot (and on `am compact system`) A16 compacts
+  every non-app process by writing its `memory.current` into `memory.reclaim`; on a stock
+  5.10 kernel the file does not exist and that compaction silently does nothing. Mainline's
+  handler verbatim (no exported symbol or struct changes, KMI-inert; the later `swappiness=`
+  extension is not taken because it changes an exported function). Measured on the RS4: with
+  this handler in place one `am compact system` freed ~190 MB of RAM (page cache dropped, idle
+  daemon memory moved to zram) where the same command on v10 freed nothing; on v11 the
+  boot-time pass runs with no refused writes.
 - net — TCP BBR (default) + fq / fq_codel / CAKE + WireGuard + TTL/HL targets
   (normalize TTL for tethering)
 - storage — BFQ + Kyber I/O schedulers, all CPU governors
@@ -228,7 +237,8 @@ Wild + SusFS), `apply-kowsu.sh` (KoWSU), `apply-bore.sh` +
 `patches/bore-5.10-kmi.patch` (BORE, applied to every variant), `apply-ntsync.sh` +
 `patches/ntsync-5.10.patch` (ntsync, applied to every variant), `apply-epoll-pwait2.sh` +
 `patches/epoll_pwait2-5.10.patch` (epoll_pwait2, every variant; test in
-`test/epoll_pwait2/`), `apply-reflex.sh` +
+`test/epoll_pwait2/`), `apply-memory-reclaim.sh` + `patches/memory-reclaim-5.10.patch`
+(memory.reclaim, every variant; the live-test module in `test/memory_reclaim/`), `apply-reflex.sh` +
 `patches/cpufreq_reflex.c` (reflex governor, applied to every variant), `apply-rs4.sh` +
 `patches/rs4/` (the rs4 set, every variant), `lib/kmi_check.py` + `kmi-unresolved.baseline`
 (the 198-module cross-check), `lib/cfi_typeid_check.py` (CFI type ids after a compiler
@@ -269,7 +279,7 @@ Standing on other people's work:
 - **simonpunk** — SusFS · **tiann** — original KernelSU · **osm0sis** — AnyKernel3
 - **KOWX712** — KoWSU · **firelzrd** — BORE scheduler + reflex CPUFreq governor
 - **Elizabeth Figura / CodeWeavers** — the ntsync driver (mainline) ·
-  **Willem de Bruijn** — `epoll_pwait2` (mainline)
+  **Willem de Bruijn** — `epoll_pwait2` (mainline) · **Shakeel Butt** — `memory.reclaim` (mainline)
 - **Neutron-Toolchains** — Neutron clang
 
 Bug reports welcome — bring logs.
