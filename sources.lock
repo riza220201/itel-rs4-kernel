@@ -47,9 +47,9 @@ RUSTC_VERSION="1.82.0.p2"
 # vs 86cf3441: 12/14 Wild commits identical; 8f0c42e8 (SuSFS) adopts SusFS 2557ea2
 # (KSU_SUSFS_PRIORITY_UID_FILTER) + confines #3964 gen tracking to non-susfs; a809f3c2
 # (throne_tracker) rebased context only. Requires SusFS >= 2557ea2 -> SUSFS_REF bumped too.
-WILDKSU_REF="bea056e5637d15ddd6b0dc2013e8f2a7d98a9270"      # pershoot/KernelSU-Next dev-susfs (hot60pro-pin-20261102)
-WILDKSU_VERBASE="a6c81fa4a8b7341d0bc5c3e4507531459df871ae"                                    # version anchor = merge-base with upstream dev (v3.4.2-100-ga6c81fa4)
-WILDKSU_VER_EXPECT="33455"                                   # 30000 + rev-count(VERBASE); apply script DIES on drift
+WILDKSU_REF="54f1011f9f1c8d8e31df47995243d6551fb1a93b"      # = itel-rs4-kernel v11 pin (pershoot dev-susfs 2026-11-14; local branch hot60pro-pin-20261124): the SAME KSU-Next the RS4 5.10 runs, so its installed manager crowns this kernel
+WILDKSU_VERBASE="7ccf61479621f240c0d968ef46f1b167b6ceb500"   # upstream KernelSU-Next dev 2026-11-14 (v3.4.2-198-g7ccf6147); manager = CI run 43601257081
+WILDKSU_VER_EXPECT="33553"                                   # 30000 + rev-count(VERBASE); == the RS4 5.10 kernel + its manager (v3.4.2-198-g7ccf6147, uapi 6)
 # 🔑 UAPI 6 (unchanged since v3): no KernelSU-Next release carries it (newest is still v3.4.2,
 #    uapi 5). v5: pair with the KernelSU-Next CI manager of a6c81fa4: Actions run 41396285368
 #    ("Build Manager CI", success, artifacts `manager` / `manager-spoofed`, expire 2027-01-31).
@@ -58,7 +58,7 @@ WILDKSU_VER_EXPECT="33455"                                   # 30000 + rev-count
 # SusFS kernel side bumped to f0939fc (2026-11-01): pershoot's 86cf3441 ("kernel: selinux_hide:
 #    Even out attr/current timing") calls susfs_add_sus_type / susfs_add_sus_avd_allowed_by_type
 #    introduced in simonpunk's 15890c6 + a8af3db + f0939fc.
-SUSFS_REF="4f97ca95b574d9bca47d35f8883eafe2f145d3dc"        # simonpunk gki-android16-6.12 68f62fa + 2 pershoot picks, rebased onto 1ad7be92b (hot60pro-susfs-20261102)
+SUSFS_REF="e33599239a30feb1b6af3789e72509c7ec384b4c"        # simonpunk gki-android16-6.12 9b0b13f (v2.4.0) + the RS4 v11 pershoot picks (no-features core, Toolkit coexistence, priority-UID-filter enhance) + 50_ rebased onto 1ad7be92b (local branch hot60pro-susfs-20261124)
 
 # ── Source modifications — VENDORED in patches/ ───────────────────────────────
 # The ported patches themselves are the pin: each is generated against
