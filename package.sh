@@ -265,14 +265,14 @@ rm -rf "$AK_TEST"
 trap - EXIT
 say "AnyKernel3 self-test: PASS (repacked boot_a embeds byte-identical Image)"
 
-ZIP="$OUT/${DEVSLUG}-${VARIANT}-${DATE}.zip"
+ZIP="$OUT/$(release_tag "$VARIANT")-${DEVSLUG}-${DATE}.zip"
 rm -f "$ZIP"
 ( cd "$AK" && zip -r9 "$ZIP" . -x '.git*' 'README.md' '.github*' >/dev/null )
 say "AnyKernel3 zip: $ZIP"
 
 # ── 2. Prebuilt boot.img (stock firmware only) ──────────────────────────────
 # ⚠ This carries the STOCK boot image's own structure.
-BOOTIMG="$OUT/${DEVSLUG}-boot-${VARIANT}-${DATE}.img"
+BOOTIMG="$OUT/$(release_tag "$VARIANT")-${DEVSLUG}-boot-${DATE}.img"
 if [[ -n "$KIMG" ]]; then
   W="$PROJ/.build/repack-$VARIANT"; rm -rf "$W"; mkdir -p "$W"
   cp "$STOCK_BOOT_IMG" "$W/boot.img"
