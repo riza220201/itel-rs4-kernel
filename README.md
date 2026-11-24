@@ -11,7 +11,9 @@ Maintainer: **Riza** · device: itel-S666LN · base: Google GKI `android16-6.12`
 > **Branches:** `6.12` (this one, the default) · `5.10` — the Riza Kernel line (v1–v11,
 > `5.10.272-Riza-<variant>`) for the RS4's current ROMs.
 
-> **Status: in development.** Both variants build and pass the three-layer gate below.
+> **Status: in development.** Both variants build and pass the three-layer gate below. The
+> KernelSU-Next build boots on the RS4 (2026-11-25): root, `s666ln_balance`, the first-stage
+> modules and the Mali GPU driver load.
 > ⚠ **Not a drop-in for today's RS4 ROMs.** Every RS4 ROM so far ships 5.10 vendor modules,
 > which cannot load on a 6.12 kernel. This kernel pairs with a 6.12 vendor side: MediaTek's
 > own 6.12 driver tree for MT6789, built from source for the RS4. Use the `5.10` branch for
