@@ -52,6 +52,10 @@ source "$PROJ/device.conf"
 
 KERNEL_WS="${KERNEL_WS:-$PROJ/.build/kernel}"
 KMI_REF_TREE="${KMI_REF_TREE:-$PROJ/.build/kmi-ref}"
+# Resolve the reference trees: `find <symlink>` does not descend into a symlinked starting
+# point, so a linked tree would gate as EMPTY ("no system_dlkm reference") without an error.
+KMI_REF_TREE="$(readlink -m "$KMI_REF_TREE")"
+[[ -n "${KMI_REF_SYSTEM_TREE:-}" ]] && KMI_REF_SYSTEM_TREE="$(readlink -m "$KMI_REF_SYSTEM_TREE")"
 
 # ── Optional custom clang, e.g. Neutron clang 24 ────────────────────────────
 # Kleaf's default is the CLANG_VERSION in the pinned tree (r536225 here). Set
