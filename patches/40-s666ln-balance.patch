@@ -1,10 +1,10 @@
-mt6789_balance — balanced CPU frequency policy for MT6789 (boot boost, touch floor,
-screen-off cap), ported from itel-rs4-kernel patches/rs4/rs4_balance.c (same SoC).
+s666ln_balance — the itel RS4's (S666LN, MT6789) balanced CPU frequency policy (boot
+boost, touch floor, screen-off cap): its 5.10 rs4_balance (v7) on 6.12, via s666ln_balance.
 Changes vs the RS4: touch floor is a direct freq_qos request (no Samsung cpufreq_limit);
 the screen-off cap arms only after lcd-backlight has been seen lit, so a ROM whose
 brightness bypasses the LED class (stale 0) can never leave the phone capped in use.
-Default numbers are the RS4's, unvalidated on this phone; all are runtime tunables in
-/sys/module/mt6789_balance/parameters/.
+Default numbers are the RS4's own (rs4_balance v7); all are runtime tunables in
+/sys/module/s666ln_balance/parameters/.
 KMI      : new built-in driver on core APIs only; no struct or signature change.
 
 diff --git a/drivers/cpufreq/Kconfig b/drivers/cpufreq/Kconfig
@@ -15,14 +15,14 @@ index eb6082d84..87ca05bf5 100644
  
  	  If in doubt, say M.
  
-+config MT6789_BALANCE
-+	bool "MT6789 balanced CPU frequency policy"
++config S666LN_BALANCE
++	bool "itel RS4 (S666LN) balanced CPU frequency policy"
 +	depends on CPU_FREQ && INPUT && LEDS_CLASS
 +	help
-+	  Boot boost, a modest touch floor and a screen-off cap for MT6789
-+	  phones (6x Cortex-A55 policy0 + 2x Cortex-A76 policy6), all as
++	  Boot boost, a modest touch floor and a screen-off cap for the itel
++	  RS4 (6x Cortex-A55 policy0 + 2x Cortex-A76 policy6), all as
 +	  freq_qos requests on top of whatever governor runs. Tunables in
-+	  /sys/module/mt6789_balance/parameters/.
++	  /sys/module/s666ln_balance/parameters/.
 +
 +	  If unsure, say N.
 +
@@ -37,19 +37,19 @@ index 5216c007d..e5c2b0f7c 100644
  obj-$(CONFIG_CPU_FREQ_GOV_COMMON)		+= cpufreq_governor.o
  obj-$(CONFIG_CPU_FREQ_GOV_ATTR_SET)	+= cpufreq_governor_attr_set.o
  obj-$(CONFIG_CPU_FREQ_GOV_REFLEX)	+= cpufreq_reflex.o
-+obj-$(CONFIG_MT6789_BALANCE)		+= mt6789_balance.o
++obj-$(CONFIG_S666LN_BALANCE)		+= s666ln_balance.o
  
  obj-$(CONFIG_CPUFREQ_DT)		+= cpufreq-dt.o
  obj-$(CONFIG_CPUFREQ_DT_PLATDEV)	+= cpufreq-dt-platdev.o
-diff --git a/drivers/cpufreq/mt6789_balance.c b/drivers/cpufreq/mt6789_balance.c
+diff --git a/drivers/cpufreq/s666ln_balance.c b/drivers/cpufreq/s666ln_balance.c
 new file mode 100644
 index 000000000..8a3d732f6
 --- /dev/null
-+++ b/drivers/cpufreq/mt6789_balance.c
++++ b/drivers/cpufreq/s666ln_balance.c
 @@ -0,0 +1,416 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
-+ * mt6789_balance - a balanced CPU frequency policy for MT6789 phones
++ * s666ln_balance - the itel RS4 (S666LN) balanced CPU frequency policy
 + *                  (6x Cortex-A55 policy0 + 2x Cortex-A76 policy6)
 + *
 + * Three small behaviours, all expressed as freq_qos requests on the two
@@ -68,7 +68,7 @@ index 000000000..8a3d732f6
 + *                  grace before the next check, so waking up never runs capped.
 + *                  The check is a deferrable poll: it never wakes an idle CPU.
 + *
-+ * Ported from the itel RS4's rs4_balance (same SoC). Differences:
++ * The RS4's own rs4_balance (5.10) on 6.12, via s666ln_balance. Changes:
 + *  - the touch floor is a direct freq_qos request; the RS4 routed it through
 + *    Samsung's cpufreq_limit slot, which only existed for One UI's GOS.
 + *  - the screen-off cap ARMS ONLY AFTER the backlight has been seen lit. On a
@@ -76,13 +76,13 @@ index 000000000..8a3d732f6
 + *    a stale 0; without this guard the cap would re-engage every poll while the
 + *    phone is in use. Stale-0 therefore never caps, and a stale non-zero value
 + *    never reads "off" — both failure modes are inert.
-+ *  - default numbers are the RS4's (same MT6789 OPPs), unvalidated on this
-+ *    phone; every one is a runtime tunable.
++ *  - default numbers are rs4_balance v7's, measured on the RS4 on 5.10;
++ *    every one is a runtime tunable.
 + *
 + * Idea credit: SuiKernel (LoggingNewMemory) -- "Sandevistan Boot",
 + * "Tenebrion Battery" and "Yamada Gaming Boost", reimplemented and toned down.
 + *
-+ * Tunables and state: /sys/module/mt6789_balance/parameters/
++ * Tunables and state: /sys/module/s666ln_balance/parameters/
 + *
 + * KMI: a new self-contained built-in driver on core APIs only (freq_qos, input,
 + * the built-in LED core's exported leds_list). No struct or existing-symbol
@@ -90,7 +90,7 @@ index 000000000..8a3d732f6
 + * pointers (led_update_brightness), which kCFI type-checks like any callback.
 + */
 +
-+#define pr_fmt(fmt) "mt6789_balance: " fmt
++#define pr_fmt(fmt) "s666ln_balance: " fmt
 +
 +#include <linux/cpufreq.h>
 +#include <linux/init.h>
@@ -388,7 +388,7 @@ index 000000000..8a3d732f6
 +
 +	handle->dev = dev;
 +	handle->handler = handler;
-+	handle->name = "mt6789_balance";
++	handle->name = "s666ln_balance";
 +	handle->private = (void *)(touch ? BAL_HANDLE_TOUCH : 0UL);
 +
 +	ret = input_register_handle(handle);
@@ -431,13 +431,13 @@ index 000000000..8a3d732f6
 +	.event		= bal_input_event,
 +	.connect	= bal_input_connect,
 +	.disconnect	= bal_input_disconnect,
-+	.name		= "mt6789_balance",
++	.name		= "s666ln_balance",
 +	.id_table	= bal_input_ids,
 +};
 +
 +/* ---- init ----------------------------------------------------------------- */
 +
-+static int __init mt6789_balance_init(void)
++static int __init s666ln_balance_init(void)
 +{
 +	u64 up_ms = ktime_to_ms(ktime_get_boottime());
 +	int ret;
@@ -462,4 +462,4 @@ index 000000000..8a3d732f6
 +		touch_boost_ms, screen_off_ltl_max, screen_off_big_max);
 +	return 0;
 +}
-+late_initcall(mt6789_balance_init);
++late_initcall(s666ln_balance_init);

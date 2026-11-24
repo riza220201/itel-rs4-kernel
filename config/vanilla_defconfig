@@ -27,7 +27,7 @@ CONFIG_NETFILTER_XT_TARGET_HL=y
 CONFIG_IP_NF_TARGET_TTL=y
 CONFIG_IP6_NF_TARGET_HL=y
 
-# ── TCP congestion control: BBR as default (MODIFICATIONS §B) ──────────────
+# ── TCP congestion control: BBR as default ──────────────
 # ✏️ CORRECTED 2026-10-01. Earlier text here said gki_defconfig "already sets
 #   CONFIG_TCP_CONG_BBR=y" and TCP_CONG_ADVANCED. That was measured on the
 #   android16-6.12-LTS branch (6.12.93); the branch we actually build,
@@ -46,7 +46,7 @@ CONFIG_TCP_CONG_VEGAS=y
 # CONFIG_TCP_CONG_BIC is not set
 CONFIG_DEFAULT_BBR=y
 
-# ── CAKE qdisc (MODIFICATIONS §B) ─────────────────────────────────────────
+# ── CAKE qdisc ─────────────────────────────────────────
 # Modern AQM, selectable at runtime with tc; the default stays fq (above).
 CONFIG_NET_SCH_CAKE=y
 
@@ -64,9 +64,9 @@ CONFIG_NTSYNC=y
 #   would refuse as an unlisted module). Present but NOT selected: this ROM does not
 #   write it anywhere; pick it per policy at runtime via scaling_governor.
 CONFIG_CPU_FREQ_GOV_REFLEX=y
-# mt6789_balance (MODIFICATIONS §G) — boot boost, touch floor, screen-off cap as
-#   freq_qos requests. Tunables: /sys/module/mt6789_balance/parameters/
-CONFIG_MT6789_BALANCE=y
+# s666ln_balance — the itel RS4's boot boost, touch floor and screen-off cap as
+#   freq_qos requests. Tunables: /sys/module/s666ln_balance/parameters/
+CONFIG_S666LN_BALANCE=y
 # ADIOS I/O scheduler (§D2) — selectable per device; the DEFAULT stays mq-deadline
 #   (single-queue UFS, §F/§G: do not change the default the tester relies on).
 CONFIG_MQ_IOSCHED_ADIOS=y
@@ -85,7 +85,7 @@ CONFIG_KCOMPRESSD=y
 #   (tools/device-probe.sh answers it) — so the conclusion is not carried over,
 #   and neither is the fix. =m needs no decision.
 #
-# CONFIG_CRYPTO_LZ4HC — NOT taken, though MODIFICATIONS §B listed it. On 6.12 zram
+# CONFIG_CRYPTO_LZ4HC — NOT taken, though the Rival Abadi plan listed it. On 6.12 zram
 #   no longer uses the crypto API: it compiles its own backends (ZRAM_BACKEND_*)
 #   into zram.ko, and this device loads zram.ko from the ROM's system_dlkm (it is
 #   in neither vendor set), built by Google. Nothing we set here reaches it.

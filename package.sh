@@ -60,7 +60,7 @@ say "gate logs confirm CLEAN for $VARIANT"
 # ── Locate the built kernel ─────────────────────────────────────────────────
 KSRC_VER="$(awk -F' = ' '/^VERSION/{v=$2} /^PATCHLEVEL/{p=$2} /^SUBLEVEL/{s=$2}
                          END{print v"."p"."s}' "$KERNEL_WS/common/Makefile")"
-EXPECT_REL="${KSRC_VER}-${BRAND}-${VARIANT}"
+EXPECT_REL="${KSRC_VER}-$(release_tag "$VARIANT")"
 
 case "$KERNEL_FMT" in
   lz4)  KIMG_NAME="Image.lz4" ;;

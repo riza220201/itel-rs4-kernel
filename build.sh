@@ -120,12 +120,14 @@ else
   echo "   clang         : kleaf default $(awk -F= '/^CLANG_VERSION/{print $2}' "$KERNEL_WS/common/build.config.constants")"
 fi
 
-# The release string this build must produce: <VERSION>-<BRAND>-<variant>, the RS4's
-# shape (5.10.260-Riza-vanilla). Validated here because each piece lands in a C
-# string literal, in `uname -r`, and in a sed expression in brand_source().
-LOCALVERSION_STR="-${BRAND}-${VARIANT}"
+# The release string this build must produce: <VERSION>-<release tag of the variant>
+# (device.conf release_tag: 6.12.38-Ujang-X-Hinojoburi / 6.12.38-ZUjang-X-HinojoburiZ).
+# Validated here because each piece lands in a C string literal, in `uname -r`, and
+# in a sed expression in brand_source().
+RELEASE_TAG="$(release_tag "$VARIANT")"
+LOCALVERSION_STR="-${RELEASE_TAG}"
 EXPECT_REL="${KSRC_VER}${LOCALVERSION_STR}"
-for v in BRAND KBUILD_BUILD_USER KBUILD_BUILD_HOST; do
+for v in BRAND RELEASE_TAG KBUILD_BUILD_USER KBUILD_BUILD_HOST; do
   [[ "${!v:-}" =~ ^[A-Za-z0-9._-]+$ ]] || die "device.conf $v='${!v:-}' — use only [A-Za-z0-9._-]"
 done
 # __NEW_UTS_LEN is 64: a longer release fails deep in the kernel build instead of here.

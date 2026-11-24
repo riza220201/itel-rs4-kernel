@@ -20,7 +20,7 @@
 10-bore-7.0.0-gki-kabi.patch    CONFIG_SCHED_BORE            sched_init_bore
 20-ntsync-mainline.patch        CONFIG_NTSYNC                ntsync_misc
 30-reflex-0.4.0.patch           CONFIG_CPU_FREQ_GOV_REFLEX   reflex_gov
-40-mt6789-balance.patch         CONFIG_MT6789_BALANCE        mt6789_balance_init
+40-s666ln-balance.patch         CONFIG_S666LN_BALANCE        s666ln_balance_init
 50-adios-3.3.0.patch            CONFIG_MQ_IOSCHED_ADIOS      mq_adios
 60-kcompressd-0.5-gki.patch     CONFIG_KCOMPRESSD            kcompressd_nodes
 70-le9uo-1.14.patch             -                            sysctl_workingset_protection
